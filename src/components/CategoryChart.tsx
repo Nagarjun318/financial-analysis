@@ -1,6 +1,6 @@
 import React from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Transaction } from '../types.ts';
+import { Transaction } from '../src/types.ts';
 import { formatCurrency } from '../utils.ts';
 
 interface CategoryChartProps {

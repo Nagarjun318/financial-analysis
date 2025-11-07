@@ -1,5 +1,5 @@
 import React from 'react';
-import { Summary as SummaryType } from '../types.ts';
+import { Summary as SummaryType } from '../src/types.ts';
 import { ArrowUpCircle, ArrowDownCircle, PiggyBank } from 'lucide-react';
 import { formatCurrency } from '../utils.ts';
 

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useRef } from 'react';
-import { AnalysisResult, Transaction } from '../types.ts';
+import { AnalysisResult, Transaction } from '../src/types.ts';
 import Summary from './Summary.tsx';
 import CategoryChart from './CategoryChart.tsx';
 import TransactionList from './TransactionList.tsx';

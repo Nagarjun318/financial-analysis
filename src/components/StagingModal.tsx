@@ -1,6 +1,6 @@
 import React from 'react';
 import { X, Loader2 } from 'lucide-react';
-import { Transaction } from '../types.ts';
+import { Transaction } from '../src/types.ts';
 import { formatCurrency, formatDisplayDate } from '../utils.ts';
 
 interface StagingModalProps {

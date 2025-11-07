@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Transaction } from '../types.ts';
+import { Transaction } from '../src/types.ts';
 import { formatCurrency } from '../utils.ts';
 
 interface MonthlySummaryTableProps {

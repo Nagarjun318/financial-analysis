@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { supabase } from '../services/supabaseClient.ts';
+import { supabase } from '../src/services/supabaseClient.ts';
 import { Loader2 } from 'lucide-react';
 
 const Auth: React.FC = () => {
