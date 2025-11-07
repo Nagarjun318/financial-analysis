@@ -9,8 +9,8 @@ import {
   Legend,
   ResponsiveContainer
 } from 'recharts';
-import { Transaction } from '../types';
-import { formatCurrency } from '../utils';
+import { Transaction } from '../types.ts';
+import { formatCurrency } from '../utils.ts';
 
 interface TrendsChartProps {
   transactions: Transaction[];

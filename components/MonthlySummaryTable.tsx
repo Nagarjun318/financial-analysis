@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { Transaction } from '../types';
-import { formatCurrency } from '../utils';
+import { Transaction } from '../types.ts';
+import { formatCurrency } from '../utils.ts';
 
 interface MonthlySummaryTableProps {
   transactions: Transaction[];
@@ -20,7 +20,8 @@ const MonthlySummaryTable: React.FC<MonthlySummaryTableProps> = ({ transactions,
         // FIX: The TypeScript compiler was struggling to infer the types correctly in the original
         // complex one-liner. Sorting the array of numbers before spreading it into the
         // final array helps the compiler resolve the types correctly and fixes the arithmetic error.
-        const sortedYears = Array.from(yearSet).sort((a, b) => b - a);
+        // Fix: Explicitly type `a` and `b` as numbers to prevent arithmetic operation errors with stricter TypeScript configurations.
+        const sortedYears = Array.from(yearSet).sort((a: number, b: number) => b - a);
         return ['All', ...sortedYears];
     }, [transactions]);
 

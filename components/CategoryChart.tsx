@@ -1,7 +1,7 @@
 import React from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Transaction } from '../types';
-import { formatCurrency } from '../utils';
+import { Transaction } from '../types.ts';
+import { formatCurrency } from '../utils.ts';
 
 interface CategoryChartProps {
   transactions: Transaction[];

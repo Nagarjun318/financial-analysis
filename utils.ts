@@ -1,5 +1,5 @@
-import { Transaction, AnalysisResult } from './types';
-import { categorizationMap } from './categorizationMap';
+import { Transaction, AnalysisResult } from './types.ts';
+import { categorizationMap } from './categorizationMap.ts';
 
 /**
  * Parses a date from various formats into a valid Date object using UTC.

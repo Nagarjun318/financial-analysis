@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Transaction } from '../types';
-import { TransactionFilters } from './Dashboard';
+import { Transaction } from '../types.ts';
+import { TransactionFilters } from './Dashboard.tsx';
 // Fix: Imported Loader2 to show a loading spinner on delete.
 import { XCircle, ArrowUp, ArrowDown, Pencil, Trash2, Loader2 } from 'lucide-react';
-import { formatCurrency, formatDisplayDate } from '../utils';
+import { formatCurrency, formatDisplayDate } from '../utils.ts';
 
 interface TransactionListProps {
   transactions: Transaction[];

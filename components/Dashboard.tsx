@@ -1,10 +1,10 @@
 import React, { useState, useMemo, useCallback, useRef } from 'react';
-import { AnalysisResult, Transaction } from '../types';
-import Summary from './Summary';
-import CategoryChart from './CategoryChart';
-import TransactionList from './TransactionList';
-import MonthlySummaryTable from './MonthlySummaryTable';
-import TrendsChart from './TrendsChart';
+import { AnalysisResult, Transaction } from '../types.ts';
+import Summary from './Summary.tsx';
+import CategoryChart from './CategoryChart.tsx';
+import TransactionList from './TransactionList.tsx';
+import MonthlySummaryTable from './MonthlySummaryTable.tsx';
+import TrendsChart from './TrendsChart.tsx';
 import { Upload } from 'lucide-react';
 
 interface DashboardProps {

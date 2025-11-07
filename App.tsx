@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { supabase } from './services/supabaseClient';
+import { supabase } from './services/supabaseClient.ts';
 import { Session } from '@supabase/supabase-js';
-import Auth from './components/Auth';
-import Dashboard from './components/Dashboard';
-import StagingModal from './components/StagingModal';
-import EditTransactionModal from './components/EditTransactionModal';
-import { Transaction, AnalysisResult } from './types';
-import { processXlsData, analyzeTransactions, getCategory } from './utils';
+import Auth from './components/Auth.tsx';
+import Dashboard from './components/Dashboard.tsx';
+import StagingModal from './components/StagingModal.tsx';
+import EditTransactionModal from './components/EditTransactionModal.tsx';
+import { Transaction, AnalysisResult } from './types.ts';
+import { processXlsData, analyzeTransactions, getCategory } from './utils.ts';
 
 const emptyAnalysisResult: AnalysisResult = {
   summary: { totalIncome: 0, totalExpenses: 0, netSavings: 0 },

@@ -1,7 +1,7 @@
 import React from 'react';
-import { Summary as SummaryType } from '../types';
+import { Summary as SummaryType } from '../types.ts';
 import { ArrowUpCircle, ArrowDownCircle, PiggyBank } from 'lucide-react';
-import { formatCurrency } from '../utils';
+import { formatCurrency } from '../utils.ts';
 
 interface SummaryProps {
   summary: SummaryType;
