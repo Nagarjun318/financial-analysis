@@ -1,0 +1,5 @@
+{
+  "name": "Personal Financial Analyzer",
+  "description": "An application that analyzes your monthly bank statements using AI to provide insights into your spending habits. Simply paste your transaction data to get a detailed breakdown of income, expenses, and savings suggestions.",
+  "requestFramePermissions": []
+}
