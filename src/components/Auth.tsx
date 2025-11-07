@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { supabase } from '../src/services/supabaseClient.ts';
+import { supabase } from '../services/supabaseClient';
 import { Loader2 } from 'lucide-react';
 
 const Auth: React.FC = () => {
@@ -14,9 +14,11 @@ const Auth: React.FC = () => {
     setError(null);
     setMessage(null);
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       setError(error.message);
+    } else if (!data.session) {
+      setError('Login failed. Please try again.');
     }
     setLoading(false);
   };
@@ -26,11 +28,28 @@ const Auth: React.FC = () => {
     setError(null);
     setMessage(null);
     setLoading(true);
-    const { error } = await supabase.auth.signUp({ email, password });
+    const { data, error } = await supabase.auth.signUp({ email, password });
     if (error) {
       setError(error.message);
     } else {
-      setMessage('Check your email for the confirmation link!');
+      // Email confirmation may be required based on project settings.
+      setMessage('Account created. Check your email for a confirmation link if required.');
+    }
+    setLoading(false);
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setMessage(null);
+    setLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + '/reset-password'
+    });
+    if (error) {
+      setError(error.message);
+    } else {
+      setMessage('Password reset email sent (if account exists).');
     }
     setLoading(false);
   };
@@ -44,7 +63,7 @@ const Auth: React.FC = () => {
             Sign in to your account or create a new one
           </p>
         </div>
-        <form className="space-y-6">
+  <form className="space-y-6" onSubmit={handleLogin}>
           <div>
             <label htmlFor="email" className="text-sm font-medium text-light-text dark:text-dark-text">
               Email address
@@ -82,20 +101,29 @@ const Auth: React.FC = () => {
           {error && <p className="text-sm text-red-500 text-center">{error}</p>}
           {message && <p className="text-sm text-green-500 text-center">{message}</p>}
 
-          <div className="flex flex-col sm:flex-row gap-4">
+          <div className="flex flex-col gap-3">
             <button
-              onClick={handleLogin}
+              type="submit"
               disabled={loading || !email || !password}
               className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-brand-primary hover:bg-brand-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-primary disabled:opacity-50"
             >
               {loading ? <Loader2 className="animate-spin" /> : 'Sign In'}
             </button>
-             <button
+            <button
               onClick={handleSignUp}
+              type="button"
               disabled={loading || !email || !password}
               className="w-full flex justify-center py-2 px-4 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-light-text dark:text-dark-text bg-transparent hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-primary disabled:opacity-50"
             >
-              {loading ? <Loader2 className="animate-spin" /> : 'Sign Up'}
+              {loading ? <Loader2 className="animate-spin" /> : 'Create Account'}
+            </button>
+            <button
+              onClick={handleResetPassword}
+              type="button"
+              disabled={loading || !email}
+              className="text-xs self-center text-brand-primary hover:underline disabled:opacity-50"
+            >
+              Forgot password?
             </button>
           </div>
         </form>

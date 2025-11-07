@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { supabase } from './services/supabaseClient.ts';
+import { supabase } from './services/supabaseClient';
 import { Session } from '@supabase/supabase-js';
-import Auth from './components/Auth.tsx';
-import Dashboard from './components/Dashboard.tsx';
-import StagingModal from './components/StagingModal.tsx';
-import EditTransactionModal from './components/EditTransactionModal.tsx';
-import { Transaction, AnalysisResult } from './types.ts';
-import { processXlsData, analyzeTransactions, getCategory } from './utils.ts';
+import Auth from './components/Auth';
+import Dashboard from './components/Dashboard';
+import StagingModal from './components/StagingModal';
+import EditTransactionModal from './components/EditTransactionModal';
+import { Transaction, AnalysisResult } from './types';
+import { processXlsData, analyzeTransactions, getCategory } from './utils';
 
 const emptyAnalysisResult: AnalysisResult = {
   summary: { totalIncome: 0, totalExpenses: 0, netSavings: 0 },
@@ -30,8 +30,7 @@ const App: React.FC = () => {
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
-  /*
-  // Original Supabase auth logic
+  // Supabase auth logic
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
@@ -42,26 +41,6 @@ const App: React.FC = () => {
     });
 
     return () => subscription.unsubscribe();
-  }, []);
-  */
-
-  // MOCK USER - LOGIN BYPASS
-  useEffect(() => {
-    console.log("Using mock user session to bypass login.");
-    const mockSession: Session = {
-      access_token: 'mock-access-token',
-      refresh_token: 'mock-refresh-token',
-      expires_in: 3600,
-      token_type: 'bearer',
-      user: {
-        id: '0f8b9ddd-58bd-4d54-ad5b-8938936bce06', // User-provided ID
-        app_metadata: {},
-        user_metadata: {},
-        aud: 'authenticated',
-        created_at: new Date().toISOString(),
-      },
-    };
-    setSession(mockSession);
   }, []);
 
 
@@ -223,17 +202,31 @@ const App: React.FC = () => {
     }
   };
 
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    setAnalysisResult(emptyAnalysisResult);
+  };
+
   if (!session) {
-    // With login bypass, this will only show briefly before the mock session is set.
-    return (
-        <div className="flex justify-center items-center h-screen">
-            <p>Initializing...</p>
-        </div>
-    );
+    return <Auth />;
   }
   
   return (
     <div className="min-h-screen bg-light-bg dark:bg-dark-bg text-light-text dark:text-dark-text font-sans">
+      <header className="w-full bg-light-card dark:bg-dark-card shadow-sm mb-4">
+        <div className="container mx-auto p-4 flex items-center justify-between">
+          <h1 className="text-xl font-semibold">Finance Dashboard</h1>
+          <div className="flex items-center gap-4">
+            <span className="text-sm opacity-80">{session.user?.email}</span>
+            <button
+              onClick={handleSignOut}
+              className="px-3 py-1.5 rounded-md text-sm font-medium bg-brand-primary text-white hover:bg-brand-primary/90 focus:outline-none focus:ring-2 focus:ring-brand-primary"
+            >
+              Sign Out
+            </button>
+          </div>
+        </div>
+      </header>
       <main className="container mx-auto p-4 sm:p-6 lg:p-8">
         {loading ? (
           <div className="flex justify-center items-center h-screen">
