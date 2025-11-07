@@ -17,7 +17,11 @@ const MonthlySummaryTable: React.FC<MonthlySummaryTableProps> = ({ transactions,
         // Ensure the current year is always an option in the dropdown.
         yearSet.add(new Date().getFullYear());
 
-        return ['All', ...Array.from(yearSet).sort((a, b) => b - a)];
+        // FIX: The TypeScript compiler was struggling to infer the types correctly in the original
+        // complex one-liner. Sorting the array of numbers before spreading it into the
+        // final array helps the compiler resolve the types correctly and fixes the arithmetic error.
+        const sortedYears = Array.from(yearSet).sort((a, b) => b - a);
+        return ['All', ...sortedYears];
     }, [transactions]);
 
     // Default the selected year to the current year for a more relevant initial view.
@@ -129,7 +133,7 @@ const MonthlySummaryTable: React.FC<MonthlySummaryTableProps> = ({ transactions,
                         onChange={(e) => setSelectedYear(e.target.value)}
                         className="bg-light-bg dark:bg-dark-bg border border-gray-300 dark:border-gray-600 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-brand-primary"
                     >
-                        {years.map(year => <option key={year} value={year}>{year}</option>)}
+                        {years.map(year => <option key={String(year)} value={year}>{year}</option>)}
                     </select>
                     <select
                         value={selectedCategory}
