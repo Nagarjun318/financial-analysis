@@ -1,6 +1,8 @@
-import React, { useState, useMemo, useCallback, useRef } from 'react';
-import { AnalysisResult, Transaction } from '../src/types.ts';
+import React from 'react';
+import { AnalysisResult, Transaction } from '../types.ts';
+import { VirtualizedTransactionList } from './VirtualizedTransactionList.tsx';
 import Summary from './Summary.tsx';
+import ForecastSummary from './ForecastSummary.tsx';
 import CategoryChart from './CategoryChart.tsx';
 import TransactionList from './TransactionList.tsx';
 import MonthlySummaryTable from './MonthlySummaryTable.tsx';
@@ -13,6 +15,7 @@ interface DashboardProps {
   isUploading: boolean;
   onEditTransaction: (transaction: Transaction) => void;
   onDeleteTransaction: (transactionId: number) => Promise<void>;
+  userId: string; // current authenticated user id for budgets
 }
 
 export interface TransactionFilters {
@@ -23,6 +26,7 @@ export interface TransactionFilters {
   amount: string;
   type: 'debit' | 'credit' | 'all';
   monthYear: string | null; // YYYY-MM
+  year: string | null; // YYYY (from monthly summary filter)
 }
 
 const initialFilters: TransactionFilters = {
@@ -33,21 +37,23 @@ const initialFilters: TransactionFilters = {
   amount: '',
   type: 'all',
   monthYear: null,
+  year: null,
 };
 
 const Dashboard: React.FC<DashboardProps> = ({ 
-    analysisResult, 
-    onFileUpload, 
-    isUploading,
-    onEditTransaction,
-    onDeleteTransaction,
+  analysisResult, 
+  onFileUpload, 
+  isUploading,
+  onEditTransaction,
+  onDeleteTransaction,
+  userId,
 }) => {
-  const { summary, transactions: allTransactions } = analysisResult;
-  const [filters, setFilters] = useState<TransactionFilters>(initialFilters);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { summary, transactions: allTransactions, forecast, anomalies } = analysisResult;
+  const [filters, setFilters] = React.useState(initialFilters);
+  const fileInputRef = React.useRef(null);
 
   const handleUploadClick = () => {
-      fileInputRef.current?.click();
+    (fileInputRef.current as HTMLInputElement | null)?.click();
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -59,26 +65,46 @@ const Dashboard: React.FC<DashboardProps> = ({
       }
   };
 
-  const handleFilterChange = useCallback((newFilters: Partial<TransactionFilters>) => {
-    setFilters(prev => ({ ...prev, ...newFilters }));
+  const handleFilterChange = React.useCallback((newFilters: Partial<TransactionFilters>) => {
+    setFilters((prev: TransactionFilters) => ({ ...prev, ...newFilters }));
   }, []);
   
-  const handleResetFilters = useCallback(() => {
+  const handleResetFilters = React.useCallback(() => {
     setFilters(initialFilters);
   }, []);
 
-  const handleMonthlyCellClick = useCallback((monthYear: string | null, transactionType: 'debit' | 'credit' | null, category: string) => {
+  const handleMonthlyCellClick = React.useCallback((monthYear: string | null, transactionType: 'debit' | 'credit' | null, category: string) => {
     setFilters({
       ...initialFilters,
-      monthYear: monthYear,
+      monthYear,
+      year: monthYear ? monthYear.substring(0,4) : null,
       type: transactionType || 'all',
       category: category === 'All' ? '' : category,
     });
-    // Scroll to the transaction list for better UX
     document.getElementById('transaction-list')?.scrollIntoView({ behavior: 'smooth' });
   }, []);
 
-  const filteredTransactions = useMemo(() => {
+  const handleSummaryFiltersChange = React.useCallback(({ year, category }: { year: string; category: string }) => {
+    setFilters((prev: TransactionFilters) => ({
+      ...prev,
+      year: year === 'All' ? null : year,
+      category: category === 'All' ? '' : category,
+      // Reset month-year when changing high-level year/category to avoid stale narrow filter
+      monthYear: null,
+    }));
+  }, []);
+
+  // Derived filtered dataset used by charts and transaction list.
+  const chartFilteredTransactions = React.useMemo(() => {
+    return allTransactions.filter(t => {
+      const matchYear = filters.year ? t.date.startsWith(filters.year) : true;
+      const matchMonthYear = filters.monthYear ? t.date.startsWith(filters.monthYear) : true;
+      const matchCategory = filters.category ? t.category.toLowerCase().includes(filters.category.toLowerCase()) : true;
+      return matchYear && matchMonthYear && matchCategory;
+    });
+  }, [allTransactions, filters.year, filters.monthYear, filters.category]);
+
+  const filteredTransactions = React.useMemo(() => {
     return allTransactions.filter(t => {
       const matchGlobal = filters.globalSearch
         ? Object.values(t).some(val => String(val).toLowerCase().includes(filters.globalSearch.toLowerCase()))
@@ -106,13 +132,15 @@ const Dashboard: React.FC<DashboardProps> = ({
       <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
         <h2 className="text-3xl font-bold text-light-text dark:text-dark-text">Financial Overview</h2>
         <div className="flex items-center">
-            <input 
-                type="file"
-                ref={fileInputRef}
-                onChange={handleFileChange}
-                className="hidden"
-                accept=".xls,.xlsx"
-            />
+      <input 
+        id="file-upload"
+        name="file-upload"
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileChange}
+        className="hidden"
+        accept=".xls,.xlsx"
+      />
             <button
                 onClick={handleUploadClick}
                 disabled={isUploading}
@@ -124,24 +152,39 @@ const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
-      <Summary summary={summary} />
+  <Summary summary={summary} />
+  <ForecastSummary forecast={forecast} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <CategoryChart transactions={allTransactions} />
-        <TrendsChart transactions={allTransactions} />
+        <CategoryChart transactions={chartFilteredTransactions} />
+        <TrendsChart transactions={chartFilteredTransactions} />
       </div>
       
-      <MonthlySummaryTable transactions={allTransactions} onCellClick={handleMonthlyCellClick} />
+  <MonthlySummaryTable userId={userId} transactions={allTransactions} onCellClick={handleMonthlyCellClick} onFiltersChange={handleSummaryFiltersChange} />
 
-      <div id="transaction-list">
-        <TransactionList 
-          transactions={filteredTransactions} 
-          filters={filters}
-          onFilterChange={handleFilterChange}
-          onResetFilters={handleResetFilters}
-          onEdit={onEditTransaction}
-          onDelete={onDeleteTransaction}
-        />
+      <div id="transaction-list" className="mt-4">
+        {filteredTransactions.length > 800 ? (
+          <div className="space-y-3">
+            <p className="text-xs text-light-text-secondary dark:text-dark-text-secondary">Showing virtualized list for performance (total {filteredTransactions.length}).</p>
+            <VirtualizedTransactionList
+              transactions={filteredTransactions}
+              onEdit={onEditTransaction}
+              onDelete={onDeleteTransaction}
+              height={640}
+              rowHeight={50}
+            />
+          </div>
+        ) : (
+          <TransactionList 
+            transactions={filteredTransactions} 
+            filters={filters}
+            anomalies={anomalies}
+            onFilterChange={handleFilterChange}
+            onResetFilters={handleResetFilters}
+            onEdit={onEditTransaction}
+            onDelete={onDeleteTransaction}
+          />
+        )}
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import {
   LineChart,
   Line,
@@ -9,7 +9,7 @@ import {
   Legend,
   ResponsiveContainer
 } from 'recharts';
-import { Transaction } from '../src/types.ts';
+import { Transaction } from '../types.ts';
 import { formatCurrency } from '../utils.ts';
 
 interface TrendsChartProps {
@@ -17,33 +17,22 @@ interface TrendsChartProps {
 }
 
 const TrendsChart: React.FC<TrendsChartProps> = ({ transactions }) => {
-  const chartData = useMemo(() => {
-    const monthlySummary: { [key: string]: { income: number; expense: number } } = {};
-
+  const chartData = React.useMemo(() => {
+    // Assume incoming transactions are already filtered by year/month/category in parent if needed.
+    // We aggregate all distinct YYYY-MM present in the provided list.
+    const monthlySummary: Record<string, { income: number; expense: number }> = {};
     transactions.forEach(t => {
+      if (!t.date || t.date.length < 7) return; // guard invalid date string
       const monthKey = t.date.substring(0, 7); // YYYY-MM
-      if (!monthlySummary[monthKey]) {
-        monthlySummary[monthKey] = { income: 0, expense: 0 };
-      }
-
-      if (t.type === 'credit') {
-        monthlySummary[monthKey].income += t.amount;
-      } else {
-        monthlySummary[monthKey].expense += Math.abs(t.amount);
-      }
+      if (!monthlySummary[monthKey]) monthlySummary[monthKey] = { income: 0, expense: 0 };
+      if (t.type === 'credit') monthlySummary[monthKey].income += t.amount; else if (t.type === 'debit') monthlySummary[monthKey].expense += Math.abs(t.amount);
     });
-
-    return Object.keys(monthlySummary)
-      .map(key => {
+    return Object.entries(monthlySummary)
+      .map(([key, vals]) => {
         const [year, month] = key.split('-');
         const date = new Date(parseInt(year), parseInt(month) - 1);
         const monthName = date.toLocaleString('default', { month: 'short' });
-        return {
-          month: `${monthName} '${year.substring(2)}`,
-          key,
-          income: monthlySummary[key].income,
-          expense: monthlySummary[key].expense,
-        };
+        return { month: `${monthName} '${year.substring(2)}`, key, income: vals.income, expense: vals.expense };
       })
       .sort((a, b) => a.key.localeCompare(b.key));
   }, [transactions]);
@@ -72,7 +61,7 @@ const TrendsChart: React.FC<TrendsChartProps> = ({ transactions }) => {
               labelStyle={{ color: '#f9fafb' }}
               itemStyle={{ textTransform: 'capitalize' }}
             />
-            <Legend wrapperStyle={{fontSize: "14px"}}/>
+            {/* Legend removed due to TypeScript JSX typing issue; can be re-added once recharts types are adjusted */}
             <Line type="monotone" dataKey="income" stroke="#10b981" strokeWidth={2} activeDot={{ r: 8 }} dot={{ r: 4 }} />
             <Line type="monotone" dataKey="expense" stroke="#ef4444" strokeWidth={2} activeDot={{ r: 8 }} dot={{ r: 4 }} />
           </LineChart>

@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { supabase } from './services/supabaseClient';
+import React from 'react';
+import { supabase, isSupabaseConfigured } from './services/supabaseClient';
+import SetupInstructions from './components/SetupInstructions.tsx';
 import { Session } from '@supabase/supabase-js';
 import Auth from './components/Auth';
 import Dashboard from './components/Dashboard';
@@ -7,6 +8,8 @@ import StagingModal from './components/StagingModal';
 import EditTransactionModal from './components/EditTransactionModal';
 import { Transaction, AnalysisResult } from './types';
 import { processXlsData, analyzeTransactions, getCategory } from './utils';
+import { useTransactions } from './hooks/useTransactions.ts';
+import { makeTransactionKey, filterDuplicateStaged } from './domain/transactions/dedupe.ts';
 
 const emptyAnalysisResult: AnalysisResult = {
   summary: { totalIncome: 0, totalExpenses: 0, netSavings: 0 },
@@ -14,24 +17,24 @@ const emptyAnalysisResult: AnalysisResult = {
 };
 
 const App: React.FC = () => {
-  const [session, setSession] = useState<Session | null>(null);
-  const [analysisResult, setAnalysisResult] = useState<AnalysisResult>(emptyAnalysisResult);
-  const [loading, setLoading] = useState(true);
-  const [isUploading, setIsUploading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [session, setSession] = React.useState(null as Session | null);
+  const [analysisResult, setAnalysisResult] = React.useState(emptyAnalysisResult as AnalysisResult);
+  const [loading, setLoading] = React.useState(true);
+  const [isUploading, setIsUploading] = React.useState(false);
+  const [error, setError] = React.useState(null as string | null);
 
   // Staging transactions from file upload
-  const [stagedTransactions, setStagedTransactions] = useState<Transaction[]>([]);
-  const [isStagingModalOpen, setIsStagingModalOpen] = useState(false);
-  const [stagedFileName, setStagedFileName] = useState<string | null>(null);
-  const [isConfirming, setIsConfirming] = useState(false);
+  const [stagedTransactions, setStagedTransactions] = React.useState([] as Transaction[]);
+  const [isStagingModalOpen, setIsStagingModalOpen] = React.useState(false);
+  const [stagedFileName, setStagedFileName] = React.useState(null as string | null);
+  const [isConfirming, setIsConfirming] = React.useState(false);
   
   // Editing transaction
-  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingTransaction, setEditingTransaction] = React.useState(null as Transaction | null);
+  const [isEditModalOpen, setIsEditModalOpen] = React.useState(false);
 
   // Supabase auth logic
-  useEffect(() => {
+  React.useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
     });
@@ -44,66 +47,21 @@ const App: React.FC = () => {
   }, []);
 
 
-  const fetchTransactions = useCallback(async () => {
-    if (!session?.user) return;
+  const { transactions, isLoading, insert, update, remove, refetch } = useTransactions(session?.user?.id);
 
-    setLoading(true);
-    setError(null);
-    try {
-      let allTransactionsData: any[] = [];
-      let page = 0;
-      const pageSize = 1000; // Max rows per Supabase request
-
-      while (true) {
-        const { data, error: dbError } = await supabase
-          .from('transactions')
-          .select('*')
-          .eq('user_id', session.user.id)
-          .order('date', { ascending: false })
-          .range(page * pageSize, (page + 1) * pageSize - 1);
-
-        if (dbError) throw dbError;
-
-        if (data) {
-          allTransactionsData = allTransactionsData.concat(data);
-        }
-
-        // If fewer than max rows are returned, we've reached the last page
-        if (!data || data.length < pageSize) {
-          break;
-        }
-
-        page++;
-      }
-      
-      const transactions: Transaction[] = allTransactionsData.map((t: any) => ({
-          id: t.id,
-          user_id: t.user_id,
-          date: t.date,
-          description: t.Description,
-          amount: t.Amount,
-          category: t.Category,
-          type: t.Amount >= 0 ? 'credit' : 'debit'
-      }));
-
-      setAnalysisResult(analyzeTransactions(transactions));
-    } catch (err: any) {
-      setError(err.message || 'Failed to fetch transactions.');
-      console.error('Error fetching transactions:', err);
-      setAnalysisResult(emptyAnalysisResult);
-    } finally {
-      setLoading(false);
-    }
-  }, [session]);
-
-  useEffect(() => {
-    if (session) {
-      fetchTransactions();
-    } else {
+  React.useEffect(() => {
+    if (!session) {
       setAnalysisResult(emptyAnalysisResult);
       setLoading(false);
+      return;
     }
-  }, [session, fetchTransactions]);
+    if (isLoading) {
+      setLoading(true);
+      return;
+    }
+    setLoading(false);
+    setAnalysisResult(analyzeTransactions(transactions));
+  }, [session, isLoading, transactions]);
 
   const handleFileUpload = async (file: File) => {
     setIsUploading(true);
@@ -126,27 +84,60 @@ const App: React.FC = () => {
     setIsConfirming(true);
     setError(null);
     try {
-        const transactionsToInsert = stagedTransactions.map(t => ({
-            date: t.date,
-            Description: t.description,
-            Amount: t.amount,
-            Category: t.category,
-            user_id: session.user.id,
-        }));
+      // Build existing key set for dedupe (client-side only)
+      const existingKeySet = new Set<string>(analysisResult.transactions.map((t: Transaction) => makeTransactionKey({
+        date: t.date,
+        description: t.description,
+        amount: t.amount,
+        category: t.category,
+        type: t.type,
+      })));
 
-        const { error: dbError } = await supabase.from('transactions').insert(transactionsToInsert);
-        if (dbError) throw dbError;
-        
-        setIsStagingModalOpen(false);
-        setStagedTransactions([]);
-        setStagedFileName(null);
-        await fetchTransactions(); // Refresh data
-    } catch(err: any) {
-        const errorMessage = err.message || 'An unknown database error occurred. Please check the console.';
-        setError(`Failed to save transactions. Reason: ${errorMessage}`);
-        console.error('Error saving transactions:', err);
-    } finally {
+      const { newOnes, duplicateCount } = filterDuplicateStaged(stagedTransactions, existingKeySet);
+      if (newOnes.length === 0) {
+        setError(`All ${stagedTransactions.length} staged transactions are duplicates of existing records. Nothing inserted.`);
         setIsConfirming(false);
+        return;
+      }
+
+      type TransactionInsertRow = {
+        date: string;
+        Description: string;
+        Amount: number;
+        Category: string;
+        user_id: string;
+      };
+
+      const transactionsToInsert: TransactionInsertRow[] = newOnes.map(t => ({
+        date: t.date,
+        Description: t.description,
+        Amount: t.amount,
+        Category: t.category,
+        user_id: session.user.id,
+      }));
+
+      await insert(transactionsToInsert.map(r => ({
+        user_id: r.user_id,
+        date: r.date,
+        description: r.Description,
+        amount: r.Amount,
+        category: r.Category,
+      })) as any);
+
+      setIsStagingModalOpen(false);
+      setStagedTransactions([]);
+      setStagedFileName(null);
+  await refetch();
+
+      if (duplicateCount > 0) {
+        setError(`Inserted ${transactionsToInsert.length} new transactions. Skipped ${duplicateCount} duplicates.`);
+      }
+    } catch (err: any) {
+      const errorMessage = err.message || 'An unknown database error occurred. Please check the console.';
+      setError(`Failed to save transactions. Reason: ${errorMessage}`);
+      console.error('Error saving transactions:', err);
+    } finally {
+      setIsConfirming(false);
     }
   };
 
@@ -161,23 +152,17 @@ const App: React.FC = () => {
     try {
         // Recalculate category in case description changed
         const category = getCategory(updatedTransaction.description);
-        const transactionToUpdate = {
-            date: updatedTransaction.date,
-            Description: updatedTransaction.description,
-            Amount: updatedTransaction.amount,
-            Category: category,
-        };
+    const transactionToUpdate = {
+      date: updatedTransaction.date,
+      description: updatedTransaction.description,
+      amount: updatedTransaction.amount,
+      category: category,
+    };
 
-        const { error: dbError } = await supabase
-            .from('transactions')
-            .update(transactionToUpdate)
-            .eq('id', updatedTransaction.id);
-        
-        if (dbError) throw dbError;
-        
+        await update({ id: updatedTransaction.id, values: transactionToUpdate } as any);
         setIsEditModalOpen(false);
         setEditingTransaction(null);
-        await fetchTransactions();
+        await refetch();
     } catch (err: any) {
         setError(err.message || 'Failed to update transaction.');
         console.error('Error updating transaction:', err);
@@ -188,14 +173,8 @@ const App: React.FC = () => {
   const handleDeleteTransaction = async (transactionId: number) => {
     setError(null);
     try {
-      const { error: dbError } = await supabase
-        .from('transactions')
-        .delete()
-        .eq('id', transactionId);
-
-      if (dbError) throw dbError;
-      
-      await fetchTransactions();
+      await remove(transactionId as any);
+      await refetch();
     } catch (err: any) {
       setError(err.message || 'Failed to delete transaction.');
       console.error('Error deleting transaction:', err);
@@ -206,6 +185,10 @@ const App: React.FC = () => {
     await supabase.auth.signOut();
     setAnalysisResult(emptyAnalysisResult);
   };
+
+  if (!isSupabaseConfigured) {
+    return <SetupInstructions />;
+  }
 
   if (!session) {
     return <Auth />;
@@ -239,6 +222,7 @@ const App: React.FC = () => {
             isUploading={isUploading}
             onEditTransaction={handleEditTransaction}
             onDeleteTransaction={handleDeleteTransaction}
+            userId={session.user.id}
           />
         )}
         {error && 

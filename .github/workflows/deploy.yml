@@ -18,7 +18,13 @@ jobs:
         with:
           node-version: 18
       - run: npm ci
-      - run: npm run build
+      - name: Build (inject Supabase env from GitHub Secrets)
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          echo "Building with injected Supabase env vars"
+          npm run build
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

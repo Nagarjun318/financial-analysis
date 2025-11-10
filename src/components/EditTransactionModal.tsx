@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { X, Loader2 } from 'lucide-react';
-import { Transaction } from '../src/types.ts';
+import { Transaction } from '../types.ts';
 
 interface EditTransactionModalProps {
   isOpen: boolean;
@@ -10,10 +10,10 @@ interface EditTransactionModalProps {
 }
 
 const EditTransactionModal: React.FC<EditTransactionModalProps> = ({ isOpen, transaction, onClose, onConfirm }) => {
-  const [formData, setFormData] = useState(transaction);
-  const [isConfirming, setIsConfirming] = useState(false);
+  const [formData, setFormData] = React.useState({ ...transaction });
+  const [isConfirming, setIsConfirming] = React.useState(false);
 
-  useEffect(() => {
+  React.useEffect(() => {
     setFormData(transaction);
   }, [transaction]);
 
@@ -23,12 +23,12 @@ const EditTransactionModal: React.FC<EditTransactionModalProps> = ({ isOpen, tra
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+  setFormData((prev: any) => ({ ...prev, [name]: value }));
   };
 
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const amount = parseFloat(e.target.value);
-    setFormData(prev => ({
+  setFormData((prev: any) => ({
         ...prev,
         amount: isNaN(amount) ? 0 : amount,
         type: amount > 0 ? 'credit' : 'debit'
@@ -89,7 +89,7 @@ const EditTransactionModal: React.FC<EditTransactionModalProps> = ({ isOpen, tra
                     className="mt-1 block w-full px-3 py-2 bg-light-bg dark:bg-dark-bg border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-primary focus:border-brand-primary"
                 />
             </div>
-             <div>
+      <div>
                 <label htmlFor="amount" className="block text-sm font-medium text-light-text-secondary dark:text-dark-text-secondary">Amount</label>
                 <input
                     type="number"
@@ -101,6 +101,7 @@ const EditTransactionModal: React.FC<EditTransactionModalProps> = ({ isOpen, tra
                     placeholder="Use negative for debit, positive for credit"
                 />
             </div>
+      {/* Budget field removed; budgeting now handled via category budgets table */}
         </main>
 
         <footer className="flex justify-end gap-4 p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-dark-bg rounded-b-xl">

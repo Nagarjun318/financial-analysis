@@ -1,4 +1,7 @@
-import { Transaction, AnalysisResult } from './types.ts';
+import { Transaction, AnalysisResult, ForecastResult, AnomalyResult } from './types.ts';
+import { buildForecast } from './domain/analytics/forecast.ts';
+import { detectAnomalies } from './domain/analytics/anomalies.ts';
+import { summarize as analyticsSummarize } from './domain/analytics/summarize.ts';
 import { categorizationMap } from './categorizationMap.ts';
 
 /**
@@ -93,18 +96,15 @@ export const formatDate = (date: Date): string => {
  * @param dateStr The date string to format.
  * @returns The formatted date string for display.
  */
-export const formatDisplayDate = (dateStr: string): string => {
-    // SAFER: Avoid `new Date()` constructor with strings to prevent timezone bugs.
-    // Directly parse the "YYYY-MM-DD" string.
-    const parts = dateStr.split('-');
-    if (parts.length !== 3) {
-      return dateStr; // Return original if format is wrong
-    }
-    const [year, month, day] = parts;
-    if (year.length !== 4 || month.length !== 2 || day.length !== 2) {
-      return dateStr;
-    }
-    return `${month}/${day}/${year}`;
+export const formatDisplayDate = (dateStr: string | undefined | null): string => {
+        if (!dateStr || typeof dateStr !== 'string') return '';
+        if (dateStr.length < 8) return dateStr; // quick fail-fast
+        const parts = dateStr.split('-');
+        if (parts.length !== 3) return dateStr;
+        const [year, month, day] = parts;
+        if (!year || !month || !day) return dateStr;
+        if (year.length !== 4 || month.length !== 2 || day.length !== 2) return dateStr;
+        return `${month}/${day}/${year}`;
 };
 
 
@@ -249,18 +249,12 @@ export const processXlsData = async (file: File): Promise<Transaction[]> => {
  * @param transactions The array of transactions to analyze.
  * @returns An AnalysisResult object.
  */
+// Backward compatible wrapper delegating to new analytics summarization
 export const analyzeTransactions = (transactions: Transaction[]): AnalysisResult => {
-  const totalIncome = transactions
-    .filter(t => t.type === 'credit')
-    .reduce((sum, t) => sum + t.amount, 0);
-
-  const totalExpenses = Math.abs(transactions
-    .filter(t => t.type === 'debit')
-    .reduce((sum, t) => sum + t.amount, 0));
-
-  const netSavings = totalIncome - totalExpenses;
-  
-  const summary = { totalIncome, totalExpenses, netSavings };
-
-  return { summary, transactions };
+    // Filter out invalid dates before any analytics
+    const valid = transactions.filter(t => typeof t.date === 'string' && /\d{4}-\d{2}-\d{2}/.test(t.date));
+    const summary = analyticsSummarize(valid);
+    const forecast: ForecastResult = buildForecast(valid);
+    const anomalies: AnomalyResult[] = detectAnomalies(valid);
+    return { summary, transactions: valid, forecast, anomalies };
 };

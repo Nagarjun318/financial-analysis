@@ -1,6 +1,21 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = 'https://slmkfqjpqrztkmuleerv.supabase.co';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNsbWtmcWpwcXJ6dGttdWxlZXJ2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI0ODczNTksImV4cCI6MjA3ODA2MzM1OX0.Z9Kgs85ZSu4O_mqa27fCHstvJULdGxRQDOAy-tJuKUQ';
+// ✅ Force Vite to include these env variables in the bundle.
+// Without these static references, Vite might tree-shake them.
+void import.meta.env.VITE_SUPABASE_URL;
+void import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
+
+if (!isSupabaseConfigured) {
+  console.warn(
+    '[supabaseClient] Supabase not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your .env file.'
+  );
+}
+
+export const supabase = isSupabaseConfigured
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : null;
