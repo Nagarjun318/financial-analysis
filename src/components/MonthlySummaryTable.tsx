@@ -144,9 +144,9 @@ const MonthlySummaryTable: React.FC<MonthlySummaryTableProps> = ({ userId, trans
         }
     };
 
-    if (transactions.length === 0) {
-        return null;
-    }
+    // IMPORTANT: Removed early return that skipped this effect when transactions was empty.
+    // Returning early after some hooks but before others caused a hook order change once data arrived,
+    // triggering the "Rendered more hooks" error. All hooks must run every render.
 
     // Initialize parent dashboard filters on first mount so charts reflect current year immediately.
     React.useEffect(() => {

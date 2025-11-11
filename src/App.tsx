@@ -35,6 +35,7 @@ const App: React.FC = () => {
 
   // Supabase auth logic
   React.useEffect(() => {
+    if (!supabase) return;
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
     });
@@ -182,7 +183,9 @@ const App: React.FC = () => {
   };
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
+    if (supabase) {
+      await supabase.auth.signOut();
+    }
     setAnalysisResult(emptyAnalysisResult);
   };
 

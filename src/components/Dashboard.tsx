@@ -50,15 +50,16 @@ const Dashboard: React.FC<DashboardProps> = ({
   userId,
 }) => {
   const { summary, transactions: allTransactions, forecast, anomalies } = analysisResult;
-  // Track last upload date (persisted locally). Guard against SSR/localStorage absence.
-  const { lastUpload, setLastUpload, loadingLastUpload } = useLastUpload(userId);
+  // Local UI state hooks first for stable ordering
   const [popoverOpen, setPopoverOpen] = React.useState(false);
+  const [filters, setFilters] = React.useState(initialFilters);
   const reducedMotion = React.useMemo((): boolean => {
     if (typeof window === 'undefined' || !window.matchMedia) return false;
     return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   }, []);
-  const [filters, setFilters] = React.useState(initialFilters);
   const fileInputRef = React.useRef(null);
+  // Data hooks after UI state to avoid accidental ordering changes when adding new state hooks
+  const { lastUpload, setLastUpload, loadingLastUpload } = useLastUpload(userId);
 
   const handleUploadClick = () => {
     (fileInputRef.current as HTMLInputElement | null)?.click();

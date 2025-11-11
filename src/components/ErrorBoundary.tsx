@@ -1,9 +1,10 @@
 import React from 'react';
 
 interface ErrorBoundaryState { hasError: boolean; error: Error | null; }
+interface ErrorBoundaryProps { children?: React.ReactNode }
 
-export class ErrorBoundary extends React.Component<React.PropsWithChildren, ErrorBoundaryState> {
-  constructor(props: React.PropsWithChildren) {
+export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState, any> {
+  constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false, error: null };
   }
