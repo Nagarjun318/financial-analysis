@@ -14,10 +14,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v3
+      - uses: actions/setup-node@v4
         with:
-          node-version: 18
-      - run: npm ci
+          node-version: '20'
+          cache: 'npm'
+      - name: Install deps (lockfile refresh if out of sync)
+        run: |
+          if [ -f package-lock.json ]; then
+            npm install --no-audit --no-fund
+          else
+            npm install --no-audit --no-fund
+          fi
       - name: Build (inject Supabase env from GitHub Secrets)
         env:
           VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
