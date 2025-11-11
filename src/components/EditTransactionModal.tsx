@@ -43,9 +43,9 @@ const EditTransactionModal: React.FC<EditTransactionModalProps> = ({ isOpen, tra
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-      <div className="bg-light-card dark:bg-dark-card rounded-xl shadow-xl w-full max-w-lg flex flex-col">
+      <div className="glass-panel animated-border rounded-xl shadow-xl w-full max-w-lg flex flex-col">
         <header className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-          <h2 className="text-xl font-semibold text-light-text dark:text-dark-text">Edit Transaction</h2>
+          <h2 className="text-xl font-semibold gradient-text">Edit Transaction</h2>
           <button
             onClick={onClose}
             className="p-1 rounded-full text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
@@ -104,7 +104,7 @@ const EditTransactionModal: React.FC<EditTransactionModalProps> = ({ isOpen, tra
       {/* Budget field removed; budgeting now handled via category budgets table */}
         </main>
 
-        <footer className="flex justify-end gap-4 p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-dark-bg rounded-b-xl">
+  <footer className="flex justify-end gap-4 p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/40 dark:bg-dark-bg/40 rounded-b-xl">
           <button
             onClick={onClose}
             disabled={isConfirming}

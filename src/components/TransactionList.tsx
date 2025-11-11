@@ -148,11 +148,26 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, filters
     return map;
   }, [anomalies]);
 
+  // Treat the auto-applied current year from summary as baseline (not a user filter).
+  const currentYear = new Date().getFullYear().toString();
+  const isFiltered = !!(
+    (filters.globalSearch && filters.globalSearch.trim() !== '') ||
+    (filters.date && filters.date.trim() !== '') ||
+    (filters.description && filters.description.trim() !== '') ||
+    (filters.category && filters.category.trim() !== '') ||
+    (filters.amount && filters.amount.trim() !== '') ||
+    (filters.type && filters.type !== 'all') ||
+    (filters.monthYear && filters.monthYear.trim() !== '') ||
+    (filters.year && filters.year !== currentYear)
+  );
   return (
-    <div className="bg-light-card dark:bg-dark-card p-4 sm:p-6 rounded-xl shadow-md">
+    <div className="glass-panel animated-border p-4 sm:p-6 rounded-xl shadow-lg">
       <div className="flex flex-col sm:flex-row justify-between sm:items-center mb-4 gap-4">
-        <h3 className="text-xl font-semibold text-light-text dark:text-dark-text">All Transactions ({transactions.length} matching)</h3>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col">
+          <h3 className="text-xl font-semibold rainbow-text drop-shadow-sm">All Transactions</h3>
+          <span className="text-xs font-medium tracking-wide opacity-80 mt-0.5">Rows: {transactions.length}{isFiltered && <span className="ml-2 px-2 py-0.5 rounded-full bg-brand-primary/10 text-brand-primary">Filtered</span>}</span>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => exportTransactionsCsv('transactions', transactions)}
             className="px-3 py-1.5 text-sm rounded-md bg-brand-primary text-white hover:bg-brand-primary/90 transition-colors"
@@ -169,14 +184,16 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, filters
             onChange={handleLocalFilterChange}
             className="w-full sm:w-48 bg-light-bg dark:bg-dark-bg border border-gray-300 dark:border-gray-600 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-brand-primary"
           />
-          <button 
-            onClick={onResetFilters} 
-            className="flex items-center gap-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-brand-primary dark:hover:text-brand-primary transition-colors"
-            title="Clear all filters"
-          >
-            <XCircle className="h-4 w-4" />
-            Clear
-          </button>
+          {isFiltered && (
+            <button 
+              onClick={onResetFilters} 
+              className="flex items-center gap-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-brand-primary dark:hover:text-brand-primary transition-colors"
+              title="Clear all filters"
+            >
+              <XCircle className="h-4 w-4" />
+              Clear
+            </button>
+          )}
         </div>
       </div>
       <div className="overflow-x-auto max-h-[480px] overflow-y-auto" onScroll={handleScrollLoadMore}>
@@ -215,7 +232,7 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, filters
               const anomaly = t.id ? anomalyLookup.get(t.id) : undefined;
               const anomalyClass = anomaly ? (anomaly.severity === 'severe' ? 'bg-red-50 dark:bg-red-950/30' : 'bg-amber-50 dark:bg-amber-950/30') : '';
               return (
-              <tr key={t.id} className={`border-b border-gray-200 dark:border-gray-700 last:border-b-0 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors ${anomalyClass}`}> 
+              <tr key={t.id} className={`gradient-table-row border-b border-gray-200 dark:border-gray-700 last:border-b-0 transition-colors ${anomalyClass}`}> 
                 <td className="px-4 py-3 whitespace-nowrap">{formatDisplayDate(t.date)}</td>
                 <td className="px-4 py-3 whitespace-nowrap capitalize">{t.type}</td>
                 <td className="px-4 py-3 max-w-xs truncate" title={t.description}>{t.description}</td>

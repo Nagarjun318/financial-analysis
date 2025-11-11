@@ -1,6 +1,8 @@
 import React from 'react';
+// Using react-window list via createElement to avoid JSX typing issues with CDN/ambient types.
 import { FixedSizeList as List, ListChildComponentProps } from 'react-window';
 import { Transaction } from '../types.ts';
+import { exportTransactionsCsv } from '../utils/exportCsv.ts';
 import { formatCurrency, formatDisplayDate } from '../utils.ts';
 
 interface VirtualizedTransactionListProps {
@@ -19,6 +21,10 @@ export const VirtualizedTransactionList: React.FC<VirtualizedTransactionListProp
   onEdit,
   onDelete,
 }) => {
+  // Persistent header + export even when dataset large
+  const totalAmount = React.useMemo(() => transactions.reduce((sum, t) => sum + t.amount, 0), [transactions]);
+  const headerRowHeight = 42; // px height for column headers
+  const listHeight = Math.max(0, height - headerRowHeight); // ensure non-negative
   const Row = ({ index, style }: ListChildComponentProps) => {
     const t = transactions[index];
     const formatAmount = (amount: number, type: 'debit' | 'credit') => {
@@ -47,10 +53,31 @@ export const VirtualizedTransactionList: React.FC<VirtualizedTransactionListProp
   };
 
   return (
-    <div className="rounded-xl shadow-md overflow-hidden">
-      <List height={height} itemCount={transactions.length} itemSize={rowHeight} width="100%">
-        {Row}
-      </List>
+    <div className="glass-panel animated-border rounded-xl shadow-lg overflow-hidden">
+      <div className="flex flex-col sm:flex-row justify-between sm:items-center px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-light-bg/40 dark:bg-dark-bg/40 backdrop-blur">
+        <h3 className="text-sm sm:text-base font-semibold gradient-text">All Transactions (Virtualized)</h3>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => exportTransactionsCsv('transactions', transactions)}
+            className="px-3 py-1.5 text-xs sm:text-sm rounded-md bg-brand-primary text-white hover:bg-brand-primary/90 transition-colors"
+            aria-label="Export transactions to CSV"
+          >Export CSV</button>
+          <span className="hidden sm:inline text-[11px] font-mono opacity-70">Rows: {transactions.length}</span>
+          <span className={`hidden sm:inline text-[11px] font-mono ${totalAmount >= 0 ? 'text-green-600 dark:text-green-300' : 'text-red-600 dark:text-red-400'}`}>{(totalAmount >=0 ? '+' : '')}{formatCurrency(Math.abs(totalAmount))}</span>
+        </div>
+      </div>
+      {/* Column headers (sticky) */}
+      <div className="grid grid-cols-5 gap-2 px-3 py-2 text-xs sm:text-[13px] font-semibold tracking-wide uppercase sticky top-0 bg-light-bg/70 dark:bg-dark-bg/70 backdrop-blur border-b border-gray-200 dark:border-gray-700 z-10">
+        <div>Date</div>
+        <div>Description</div>
+        <div>Category</div>
+        <div className="text-right">Amount</div>
+        <div className="text-right">Actions</div>
+      </div>
+      {React.createElement(List, { height: listHeight, itemCount: transactions.length, itemSize: rowHeight, width: '100%' }, Row)}
+      {transactions.length === 0 && (
+        <div className="p-6 text-center text-light-text-secondary dark:text-dark-text-secondary">No transactions loaded yet.</div>
+      )}
     </div>
   );
 };

@@ -155,9 +155,9 @@ const MonthlySummaryTable: React.FC<MonthlySummaryTableProps> = ({ userId, trans
     }, []);
 
     return (
-        <div className="bg-light-card dark:bg-dark-card p-4 sm:p-6 rounded-xl shadow-md">
+        <div className="glass-panel animated-border p-4 sm:p-6 rounded-xl shadow-lg">
             <div className="flex flex-col sm:flex-row justify-between sm:items-center mb-4 gap-4">
-                 <h3 className="text-xl font-semibold text-light-text dark:text-dark-text">Monthly Summary</h3>
+                 <h3 className="text-xl font-semibold gradient-text drop-shadow-sm">Monthly Summary</h3>
                             <div className="flex items-center gap-4 flex-wrap">
                                         <select
                                                 value={selectedYear}
@@ -252,7 +252,7 @@ const MonthlySummaryTable: React.FC<MonthlySummaryTableProps> = ({ userId, trans
                             const variance = selectedCategory !== 'All' ? computeCategoryBudgetVariance(row.key, selectedCategory, filteredTransactions, budgets) : null;
                             const varianceClasses = variance && variance.variance !== undefined && variance.variance > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-300';
                             return (
-                                <tr key={row.month} className="border-b border-gray-200 dark:border-gray-700 last:border-b-0">
+                                <tr key={row.month} className="gradient-table-row border-b border-gray-200 dark:border-gray-700 last:border-b-0">
                                     <td 
                                         className="px-3 py-2 font-medium cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                                         onClick={() => onCellClick(row.key, null, selectedCategory)}

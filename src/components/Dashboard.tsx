@@ -279,28 +279,16 @@ const Dashboard: React.FC<DashboardProps> = ({
   <MonthlySummaryTable userId={userId} transactions={allTransactions} onCellClick={handleMonthlyCellClick} onFiltersChange={handleSummaryFiltersChange} />
 
       <div id="transaction-list" className="mt-4">
-        {filteredTransactions.length > 800 ? (
-          <div className="space-y-3">
-            <p className="text-xs text-light-text-secondary dark:text-dark-text-secondary">Showing virtualized list for performance (total {filteredTransactions.length}).</p>
-            <VirtualizedTransactionList
-              transactions={filteredTransactions}
-              onEdit={onEditTransaction}
-              onDelete={onDeleteTransaction}
-              height={640}
-              rowHeight={50}
-            />
-          </div>
-        ) : (
-          <TransactionList 
-            transactions={filteredTransactions} 
-            filters={filters}
-            anomalies={anomalies}
-            onFilterChange={handleFilterChange}
-            onResetFilters={handleResetFilters}
-            onEdit={onEditTransaction}
-            onDelete={onDeleteTransaction}
-          />
-        )}
+        {/* Unified transactions table styling: always use full feature TransactionList */}
+        <TransactionList 
+          transactions={filteredTransactions} 
+          filters={filters}
+          anomalies={anomalies}
+          onFilterChange={handleFilterChange}
+          onResetFilters={handleResetFilters}
+          onEdit={onEditTransaction}
+          onDelete={onDeleteTransaction}
+        />
       </div>
     </div>
   );

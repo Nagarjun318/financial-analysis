@@ -24,10 +24,10 @@ const StagingModal: React.FC<StagingModalProps> = ({ isOpen, transactions, onClo
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-      <div className="bg-light-card dark:bg-dark-card rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+      <div className="glass-panel animated-border rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
         <header className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-          <h2 className="text-xl font-semibold text-light-text dark:text-dark-text truncate pr-4">
-            Review Transactions from <span className="text-brand-primary font-bold">{fileName}</span>
+          <h2 className="text-xl font-semibold rainbow-text truncate pr-4">
+            Review Transactions from <span className="font-bold">{fileName}</span>
           </h2>
           <button
             onClick={onClose}
@@ -72,7 +72,7 @@ const StagingModal: React.FC<StagingModalProps> = ({ isOpen, transactions, onClo
           </div>
         </main>
 
-        <footer className="flex justify-end gap-4 p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-dark-bg rounded-b-xl">
+  <footer className="flex justify-end gap-4 p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/40 dark:bg-dark-bg/40 rounded-b-xl">
           <button
             onClick={onClose}
             disabled={isConfirming}

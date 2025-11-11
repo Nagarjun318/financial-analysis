@@ -38,8 +38,8 @@ const TrendsChart: React.FC<TrendsChartProps> = ({ transactions }) => {
   }, [transactions]);
 
   return (
-    <div className="bg-light-card dark:bg-dark-card p-6 rounded-xl shadow-md h-full">
-      <h3 className="text-xl font-semibold mb-4 text-light-text dark:text-dark-text">Income vs. Expense Trends</h3>
+    <div className="glass-panel animated-border p-6 rounded-xl shadow-lg h-full">
+      <h3 className="text-xl font-semibold mb-4 rainbow-text">Income vs. Expense Trends</h3>
       {chartData.length > 1 ? (
         <ResponsiveContainer width="100%" height={350}>
           <LineChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
@@ -62,8 +62,8 @@ const TrendsChart: React.FC<TrendsChartProps> = ({ transactions }) => {
               itemStyle={{ textTransform: 'capitalize' }}
             />
             {/* Legend removed due to TypeScript JSX typing issue; can be re-added once recharts types are adjusted */}
-            <Line type="monotone" dataKey="income" stroke="#10b981" strokeWidth={2} activeDot={{ r: 8 }} dot={{ r: 4 }} />
-            <Line type="monotone" dataKey="expense" stroke="#ef4444" strokeWidth={2} activeDot={{ r: 8 }} dot={{ r: 4 }} />
+            <Line type="monotone" dataKey="income" stroke="#10b981" strokeWidth={3} activeDot={{ r: 9 }} dot={{ r: 5 }} />
+            <Line type="monotone" dataKey="expense" stroke="#ef4444" strokeWidth={3} activeDot={{ r: 9 }} dot={{ r: 5 }} />
           </LineChart>
         </ResponsiveContainer>
       ) : (

@@ -28,8 +28,8 @@ const CategoryChart: React.FC<CategoryChartProps> = ({ transactions }) => {
     }, [] as { name: string; value: number }[]);
 
   return (
-    <div className="bg-light-card dark:bg-dark-card p-6 rounded-xl shadow-md h-full">
-      <h3 className="text-xl font-semibold mb-4 text-light-text dark:text-dark-text">Expense Breakdown</h3>
+    <div className="glass-panel animated-border p-6 rounded-xl shadow-lg h-full">
+      <h3 className="text-xl font-semibold mb-4 gradient-text">Expense Breakdown</h3>
       {expenseData.length > 0 ? (
         <ResponsiveContainer width="100%" height={350}>
           <PieChart>
@@ -44,7 +44,7 @@ const CategoryChart: React.FC<CategoryChartProps> = ({ transactions }) => {
               nameKey="name"
             >
               {expenseData.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="#ffffff" strokeWidth={1} />
               ))}
             </Pie>
             <Tooltip

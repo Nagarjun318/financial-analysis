@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React from 'react';
 import { useDropzone } from 'react-dropzone';
 import { UploadCloud, FileText, XCircle, Loader2 } from 'lucide-react';
 
@@ -9,9 +9,9 @@ interface FileUploaderProps {
 }
 
 const FileUploader: React.FC<FileUploaderProps> = ({ onFileUpload, isLoading, error }) => {
-  const [fileName, setFileName] = useState<string | null>(null);
+  const [fileName, setFileName] = React.useState(null as string | null);
   
-  const onDrop = useCallback((acceptedFiles: File[]) => {
+  const onDrop = React.useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
       const file = acceptedFiles[0];
       setFileName(file.name);
@@ -38,13 +38,13 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onFileUpload, isLoading, er
 
   return (
     <div className="max-w-2xl mx-auto mt-10">
-      <div className="bg-light-card dark:bg-dark-card p-8 rounded-xl shadow-md">
-        <h2 className="text-2xl font-semibold text-center mb-6 text-light-text dark:text-dark-text">Upload Your Transaction File</h2>
+      <div className="glass-panel animated-border p-8 rounded-xl shadow-lg">
+        <h2 className="text-2xl font-semibold text-center mb-6 gradient-text">Upload Your Transaction File</h2>
         <p className="text-center text-light-text-secondary dark:text-dark-text-secondary mb-6">
           Drag and drop a TSV file or click to select a file to get started.
         </p>
         
-        <div {...getRootProps()} className={dropzoneClasses}>
+        <div {...getRootProps()} className={dropzoneClasses + ' glass-panel relative'}>
           <input {...getInputProps()} />
           <div className="flex flex-col items-center justify-center gap-4">
             <UploadCloud className="h-12 w-12 text-gray-400" />

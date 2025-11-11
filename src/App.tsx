@@ -183,10 +183,32 @@ const App: React.FC = () => {
   };
 
   const handleSignOut = async () => {
-    if (supabase) {
-      await supabase.auth.signOut();
+    setError(null);
+    try {
+      if (supabase) {
+        // Try standard global scope signout first
+        const { error: signOutErr } = await supabase.auth.signOut({ scope: 'global' } as any);
+        if (signOutErr) {
+          // Fallback: basic signOut (some versions expect no args)
+          const { error: fallbackErr } = await (supabase.auth as any).signOut();
+          if (fallbackErr) {
+            // As last resort, clear local storage tokens manually
+            try {
+              Object.keys(localStorage)
+                .filter(k => k.toLowerCase().includes('supabase'))
+                .forEach(k => localStorage.removeItem(k));
+            } catch {}
+            setError('Sign out encountered an auth 403. Local session cleared locally.');
+          }
+        }
+      }
+      setSession(null);
+      setAnalysisResult(emptyAnalysisResult);
+    } catch (e: any) {
+      console.error('[signout] unexpected error', e);
+      setError(e.message || 'Unexpected sign out error');
+      setSession(null);
     }
-    setAnalysisResult(emptyAnalysisResult);
   };
 
   if (!isSupabaseConfigured) {
@@ -199,14 +221,15 @@ const App: React.FC = () => {
   
   return (
     <div className="min-h-screen bg-light-bg dark:bg-dark-bg text-light-text dark:text-dark-text font-sans">
-      <header className="w-full bg-light-card dark:bg-dark-card shadow-sm mb-4">
+      <header className="w-full mb-4 rounded-b-2xl bg-gradient-to-r from-brand-primary via-fuchsia-600 to-rose-600 dark:from-indigo-700 dark:via-purple-700 dark:to-pink-600 shadow-lg shadow-indigo-600/30 dark:shadow-indigo-900/40 relative overflow-hidden">
+        <div className="absolute inset-0 opacity-30 mix-blend-overlay animate-[headerShift_24s_linear_infinite] motion-reduce:animate-none" style={{background:'linear-gradient(120deg, rgba(255,255,255,0.15), rgba(255,255,255,0.05), rgba(255,255,255,0.2))'}}></div>
         <div className="container mx-auto p-4 flex items-center justify-between">
-          <h1 className="text-xl font-semibold">Finance Dashboard</h1>
+          <h1 className="text-xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-pink-200 to-purple-200 drop-shadow-sm">Finance Dashboard</h1>
           <div className="flex items-center gap-4">
             <span className="text-sm opacity-80">{session.user?.email}</span>
             <button
               onClick={handleSignOut}
-              className="px-3 py-1.5 rounded-md text-sm font-medium bg-brand-primary text-white hover:bg-brand-primary/90 focus:outline-none focus:ring-2 focus:ring-brand-primary"
+              className="px-3 py-1.5 rounded-md text-sm font-semibold bg-white/15 backdrop-blur-sm text-white hover:bg-white/30 focus:outline-none focus:ring-2 focus:ring-white/60 transition"
             >
               Sign Out
             </button>
@@ -215,8 +238,8 @@ const App: React.FC = () => {
       </header>
       <main className="container mx-auto p-4 sm:p-6 lg:p-8">
         {loading ? (
-          <div className="flex justify-center items-center h-screen">
-            <p>Loading transactions...</p>
+          <div className="flex justify-center items-center h-[60vh]">
+            <p className="text-lg font-medium bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-cyan-400 to-emerald-400 animate-pulse">Loading transactions...</p>
           </div>
         ) : (
           <Dashboard
