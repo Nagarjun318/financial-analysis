@@ -2,6 +2,11 @@ import React from 'react';
 import { supabase, isSupabaseConfigured } from './services/supabaseClient';
 import SetupInstructions from './components/SetupInstructions.tsx';
 import { Session } from '@supabase/supabase-js';
+import Navbar from './components/Navbar.tsx';
+import HomePage from './components/HomePage.tsx';
+import AboutPage from './components/AboutPage.tsx';
+import ServicesPage from './components/ServicesPage.tsx';
+import InvestmentPage from './components/InvestmentPage.tsx';
 import Auth from './components/Auth';
 import Dashboard from './components/Dashboard';
 import StagingModal from './components/StagingModal';
@@ -18,6 +23,7 @@ const emptyAnalysisResult: AnalysisResult = {
 
 const App: React.FC = () => {
   const [session, setSession] = React.useState(null as Session | null);
+  const [currentSection, setCurrentSection] = React.useState('home');
   const [analysisResult, setAnalysisResult] = React.useState(emptyAnalysisResult as AnalysisResult);
   const [loading, setLoading] = React.useState(true);
   const [isUploading, setIsUploading] = React.useState(false);
@@ -221,35 +227,36 @@ const App: React.FC = () => {
   
   return (
     <div className="min-h-screen bg-light-bg dark:bg-dark-bg text-light-text dark:text-dark-text font-sans">
-      <header className="w-full mb-4 rounded-b-2xl bg-gradient-to-r from-brand-primary via-fuchsia-600 to-rose-600 dark:from-indigo-700 dark:via-purple-700 dark:to-pink-600 shadow-lg shadow-indigo-600/30 dark:shadow-indigo-900/40 relative overflow-hidden">
-        <div className="absolute inset-0 opacity-30 mix-blend-overlay animate-[headerShift_24s_linear_infinite] motion-reduce:animate-none" style={{background:'linear-gradient(120deg, rgba(255,255,255,0.15), rgba(255,255,255,0.05), rgba(255,255,255,0.2))'}}></div>
-        <div className="container mx-auto p-4 flex items-center justify-between">
-          <h1 className="text-xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-pink-200 to-purple-200 drop-shadow-sm">Finance Dashboard</h1>
-          <div className="flex items-center gap-4">
-            <span className="text-sm opacity-80">{session.user?.email}</span>
-            <button
-              onClick={handleSignOut}
-              className="px-3 py-1.5 rounded-md text-sm font-semibold bg-white/15 backdrop-blur-sm text-white hover:bg-white/30 focus:outline-none focus:ring-2 focus:ring-white/60 transition"
-            >
-              Sign Out
-            </button>
-          </div>
-        </div>
-      </header>
+      <Navbar 
+        currentSection={currentSection} 
+        onSectionChange={setCurrentSection}
+        userEmail={session.user?.email}
+        onSignOut={handleSignOut}
+      />
       <main className="container mx-auto p-4 sm:p-6 lg:p-8">
         {loading ? (
           <div className="flex justify-center items-center h-[60vh]">
-            <p className="text-lg font-medium bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-cyan-400 to-emerald-400 animate-pulse">Loading transactions...</p>
+            <p className="text-lg font-medium text-gray-600 dark:text-gray-300 animate-pulse">Loading transactions...</p>
           </div>
         ) : (
-          <Dashboard
-            analysisResult={analysisResult}
-            onFileUpload={handleFileUpload}
-            isUploading={isUploading}
-            onEditTransaction={handleEditTransaction}
-            onDeleteTransaction={handleDeleteTransaction}
-            userId={session.user.id}
-          />
+          <>
+            <div className="container mx-auto px-4 py-8">
+              {currentSection === 'home' && <HomePage />}
+              {currentSection === 'about' && <AboutPage />}
+              {currentSection === 'services' && <ServicesPage />}
+              {currentSection === 'finance' && (
+                <Dashboard
+                  analysisResult={analysisResult}
+                  onFileUpload={handleFileUpload}
+                  isUploading={isUploading}
+                  onEditTransaction={handleEditTransaction}
+                  onDeleteTransaction={handleDeleteTransaction}
+                  userId={session.user.id}
+                />
+              )}
+              {currentSection === 'investment' && <InvestmentPage />}
+            </div>
+          </>
         )}
         {error && 
             <div className="fixed bottom-4 right-4 bg-red-500 text-white p-4 rounded-lg shadow-lg z-50">

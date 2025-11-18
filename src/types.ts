@@ -73,3 +73,18 @@ export interface AnomalyResult {
   zScore: number;
   severity: 'moderate' | 'severe';
 }
+
+// Home Services Tracker
+export interface HomeService {
+  id?: number;
+  user_id?: string;
+  service_name: string;
+  service_type: string; // e.g., 'AC', 'Car', 'Plumbing', 'Electrical', etc.
+  last_service_date: string;
+  next_service_due: string;
+  service_provider?: string;
+  cost?: number;
+  notes?: string;
+  created_at?: string;
+  updated_at?: string;
+}

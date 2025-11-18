@@ -8,8 +8,22 @@ interface CategoryChartProps {
 }
 
 const COLORS = [
-  '#0ea5e9', '#10b981', '#f97316', '#eab308', '#8b5cf6', 
-  '#ec4899', '#64748b', '#ef4444', '#22c55e', '#3b82f6'
+  '#06b6d4', // Vibrant cyan - modern and energetic
+  '#10b981', // Emerald green - fresh and positive
+  '#f59e0b', // Golden amber - warm and inviting
+  '#8b5cf6', // Purple - luxurious and creative
+  '#ef4444', // Bright red - strong and attention-grabbing
+  '#ec4899', // Hot pink - bold and contemporary
+  '#84cc16', // Lime green - fresh and modern
+  '#f97316', // Orange - energetic and warm
+  '#06b6d4', // Electric blue - tech and trust
+  '#d946ef', // Fuchsia - vibrant and playful
+  '#14b8a6', // Teal - balanced and professional
+  '#f59e0b', // Bright yellow - optimistic and clear
+  '#6366f1', // Indigo - deep and sophisticated
+  '#fb7185', // Rose - gentle yet vibrant
+  '#22d3ee', // Sky blue - light and airy
+  '#a3e635', // Light green - growth and prosperity
 ];
 
 const CategoryChart: React.FC<CategoryChartProps> = ({ transactions }) => {

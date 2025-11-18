@@ -62,8 +62,8 @@ const TrendsChart: React.FC<TrendsChartProps> = ({ transactions }) => {
               itemStyle={{ textTransform: 'capitalize' }}
             />
             {/* Legend removed due to TypeScript JSX typing issue; can be re-added once recharts types are adjusted */}
-            <Line type="monotone" dataKey="income" stroke="#10b981" strokeWidth={3} activeDot={{ r: 9 }} dot={{ r: 5 }} />
-            <Line type="monotone" dataKey="expense" stroke="#ef4444" strokeWidth={3} activeDot={{ r: 9 }} dot={{ r: 5 }} />
+            <Line type="monotone" dataKey="income" stroke="#06b6d4" strokeWidth={3} activeDot={{ r: 9, fill: '#06b6d4', stroke: '#ffffff', strokeWidth: 2 }} dot={{ r: 5, fill: '#06b6d4' }} />
+            <Line type="monotone" dataKey="expense" stroke="#f59e0b" strokeWidth={3} activeDot={{ r: 9, fill: '#f59e0b', stroke: '#ffffff', strokeWidth: 2 }} dot={{ r: 5, fill: '#f59e0b' }} />
           </LineChart>
         </ResponsiveContainer>
       ) : (
