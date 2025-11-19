@@ -19,3 +19,108 @@ if (!isSupabaseConfigured) {
 export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseAnonKey)
   : null;
+
+/**
+ * Update AI category for a transaction
+ */
+export async function updateTransactionAICategory(
+  transactionId: number,
+  aiCategory: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!supabase) {
+    return { success: false, error: 'Supabase not configured' };
+  }
+
+  try {
+    const { error } = await supabase
+      .from('transactions')
+      .update({ ai_category: aiCategory })
+      .eq('id', transactionId);
+
+    if (error) {
+      console.error('Error updating AI category:', error);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error updating AI category:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+}
+
+/**
+ * Batch update AI categories for multiple transactions
+ */
+export async function updateTransactionAICategoriesBatch(
+  updates: Array<{ id: number; ai_category: string }>
+): Promise<{ success: boolean; error?: string; updatedCount?: number }> {
+  if (!supabase) {
+    return { success: false, error: 'Supabase not configured' };
+  }
+
+  try {
+    let successCount = 0;
+
+    // Process in batches of 50 to avoid overwhelming the database
+    const batchSize = 50;
+    for (let i = 0; i < updates.length; i += batchSize) {
+      const batch = updates.slice(i, i + batchSize);
+
+      // Use Promise.all for concurrent updates within each batch
+      const results = await Promise.all(
+        batch.map(update =>
+          supabase
+            .from('transactions')
+            .update({ ai_category: update.ai_category })
+            .eq('id', update.id)
+        )
+      );
+
+      // Count successes
+      results.forEach(result => {
+        if (!result.error) successCount++;
+      });
+    }
+
+    return { success: true, updatedCount: successCount };
+  } catch (error) {
+    console.error('Error batch updating AI categories:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+}
+
+/**
+ * Clear all AI categories (set to null)
+ */
+export async function clearAllAICategories(): Promise<{ success: boolean; error?: string }> {
+  if (!supabase) {
+    return { success: false, error: 'Supabase not configured' };
+  }
+
+  try {
+    const { error } = await supabase
+      .from('transactions')
+      .update({ ai_category: null })
+      .neq('id', -1); // Update all rows (id is never -1)
+
+    if (error) {
+      console.error('Error clearing AI categories:', error);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error clearing AI categories:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+}

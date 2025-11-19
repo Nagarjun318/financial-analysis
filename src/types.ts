@@ -7,6 +7,7 @@ export interface Transaction {
   // type is derived on the client from the amount's sign
   type: 'debit' | 'credit';
   category: string;
+  ai_category?: string | null; // AI-predicted category
   // Mark if detected as recurring (e.g., subscription or regular payment)
   recurring?: boolean;
 }
@@ -55,12 +56,19 @@ export interface ForecastPoint {
   projectedIncome: number;
   projectedExpense: number;
   projectedSavings: number;
-  method: string; // e.g., 'moving-average-3'
+  method: string; // e.g., 'moving-average-3' or 'ai-gemini'
+  // AI-specific fields
+  insights?: string; // AI-generated insights about spending patterns
+  confidence?: number; // 0-100 confidence score
+  recommendations?: string[]; // AI recommendations
+  trends?: { category: string; trend: 'increasing' | 'decreasing' | 'stable'; change: number }[];
+  warnings?: string[]; // Potential financial warnings
 }
 
 export interface ForecastResult {
   points: ForecastPoint[]; // Usually last actual + next forecast
   nextMonth: ForecastPoint | null; // Convenience pointer
+  isAIGenerated?: boolean; // Flag to indicate if AI was used
 }
 
 // Anomalies: flag transactions that deviate strongly from category norm

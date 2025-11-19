@@ -1,5 +1,5 @@
 import React from 'react';
-import { AnalysisResult, Transaction } from '../types.ts';
+import { AnalysisResult, Transaction, ForecastResult } from '../types.ts';
 import { VirtualizedTransactionList } from './VirtualizedTransactionList.tsx';
 import Summary from './Summary.tsx';
 import ForecastSummary from './ForecastSummary.tsx';
@@ -7,8 +7,12 @@ import CategoryChart from './CategoryChart.tsx';
 import TransactionList from './TransactionList.tsx';
 import MonthlySummaryTable from './MonthlySummaryTable.tsx';
 import TrendsChart from './TrendsChart.tsx';
-import { Upload, CalendarDays, Info } from 'lucide-react';
+import NaturalLanguageSearch from './NaturalLanguageSearch.tsx';
+import FinancialAdvisorChat from './FinancialAdvisorChat.tsx';
+import { Upload, CalendarDays, Info, Brain, BarChart3, RefreshCw, AlertTriangle, Settings } from 'lucide-react';
 import { useLastUpload, formatLastUpload } from '../hooks/useLastUpload.ts';
+import { generateAIForecast, GEMINI_MODELS, type GeminiModel } from '../services/geminiService.ts';
+import { buildForecast } from '../domain/analytics/forecast.ts';
 
 interface DashboardProps {
   analysisResult: AnalysisResult;
@@ -16,6 +20,7 @@ interface DashboardProps {
   isUploading: boolean;
   onEditTransaction: (transaction: Transaction) => void;
   onDeleteTransaction: (transactionId: number) => Promise<void>;
+  onRefreshData: () => void; // Callback to refresh transaction data
   userId: string; // current authenticated user id for budgets
 }
 
@@ -47,12 +52,23 @@ const Dashboard: React.FC<DashboardProps> = ({
   isUploading,
   onEditTransaction,
   onDeleteTransaction,
+  onRefreshData,
   userId,
 }) => {
   const { summary, transactions: allTransactions, forecast, anomalies } = analysisResult;
   // Local UI state hooks first for stable ordering
   const [popoverOpen, setPopoverOpen] = React.useState(false);
   const [filters, setFilters] = React.useState(initialFilters);
+  const [aiSearchResults, setAiSearchResults] = React.useState(null as Transaction[] | null);
+  const [aiSearchQuery, setAiSearchQuery] = React.useState('');
+  const [enhancedForecast, setEnhancedForecast] = React.useState(forecast as ForecastResult | undefined);
+  const [isGeneratingForecast, setIsGeneratingForecast] = React.useState(false);
+  const [forecastError, setForecastError] = React.useState(null as string | null);
+  const [useAIForecast, setUseAIForecast] = React.useState(true);
+  const [selectedForecastModel, setSelectedForecastModel] = React.useState(GEMINI_MODELS.FLASH_LITE as GeminiModel);
+  const [showForecastModelSelector, setShowForecastModelSelector] = React.useState(false);
+  const [forecastCacheKey, setForecastCacheKey] = React.useState('');
+  const [hasCachedForecast, setHasCachedForecast] = React.useState(false);
   const reducedMotion = React.useMemo((): boolean => {
     if (typeof window === 'undefined' || !window.matchMedia) return false;
     return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -60,6 +76,209 @@ const Dashboard: React.FC<DashboardProps> = ({
   const fileInputRef = React.useRef(null);
   // Data hooks after UI state to avoid accidental ordering changes when adding new state hooks
   const { lastUpload, setLastUpload, loadingLastUpload } = useLastUpload(userId);
+
+  // Helper function to get friendly model name
+  const getForecastModelDisplayName = (model: GeminiModel): string => {
+    switch (model) {
+      case GEMINI_MODELS.PRO_LATEST:
+        return 'Pro';
+      case GEMINI_MODELS.FLASH_LATEST:
+        return 'Flash';
+      case GEMINI_MODELS.FLASH_2_0:
+        return 'Flash 2.0';
+      case GEMINI_MODELS.FLASH_LITE:
+        return 'Flash Lite';
+      case GEMINI_MODELS.FLASH_2_5:
+        return 'Flash 2.5';
+      default:
+        return 'Flash Lite';
+    }
+  };
+
+  // Generate cache key based on transaction data and model
+  const generateCacheKey = React.useCallback((transactions: Transaction[], model: GeminiModel): string => {
+    // Create a hash-like key from transaction count, last transaction date, and model
+    const count = transactions.length;
+    const lastDate = transactions.length > 0 ? transactions[transactions.length - 1].date : '';
+    const totalAmount = transactions.reduce((sum, t) => sum + Math.abs(t.amount), 0);
+    return `forecast_${userId}_${count}_${lastDate}_${model}_${totalAmount.toFixed(0)}`;
+  }, [userId]);
+
+  // Load cached forecast from localStorage
+  const loadCachedForecast = React.useCallback((cacheKey: string): ForecastResult | null => {
+    try {
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        // Check if cache is still valid (less than 24 hours old)
+        const cacheTime = new Date(parsed.timestamp).getTime();
+        const now = new Date().getTime();
+        const hoursDiff = (now - cacheTime) / (1000 * 60 * 60);
+        
+        if (hoursDiff < 24) {
+          return parsed.forecast;
+        } else {
+          // Cache expired, remove it
+          localStorage.removeItem(cacheKey);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading cached forecast:', error);
+    }
+    return null;
+  }, []);
+
+  // Save forecast to localStorage
+  const saveForecastToCache = React.useCallback((cacheKey: string, forecast: ForecastResult) => {
+    try {
+      const cacheData = {
+        forecast,
+        timestamp: new Date().toISOString()
+      };
+      localStorage.setItem(cacheKey, JSON.stringify(cacheData));
+    } catch (error) {
+      console.error('Error saving forecast to cache:', error);
+    }
+  }, []);
+
+  // Generate AI forecast on mount and when transactions change
+  React.useEffect(() => {
+    const generateForecast = async () => {
+      if (!useAIForecast || allTransactions.length === 0) {
+        setEnhancedForecast(forecast);
+        setHasCachedForecast(false);
+        return;
+      }
+
+      // Generate cache key
+      const cacheKey = generateCacheKey(allTransactions, selectedForecastModel);
+      
+      // Check if cache key changed
+      if (cacheKey === forecastCacheKey && hasCachedForecast) {
+        // Cache is still valid, don't regenerate
+        return;
+      }
+
+      // Try to load from cache first
+      const cachedForecast = loadCachedForecast(cacheKey);
+      if (cachedForecast) {
+        setEnhancedForecast(cachedForecast);
+        setForecastCacheKey(cacheKey);
+        setHasCachedForecast(true);
+        setForecastError(null);
+        return;
+      }
+
+      // No valid cache, generate new forecast
+      setIsGeneratingForecast(true);
+      setForecastError(null);
+
+      try {
+        const aiForecastData = await generateAIForecast(allTransactions, selectedForecastModel);
+        const enhancedResult = buildForecast(allTransactions, 3, aiForecastData);
+        setEnhancedForecast(enhancedResult);
+        
+        // Save to cache
+        saveForecastToCache(cacheKey, enhancedResult);
+        setForecastCacheKey(cacheKey);
+        setHasCachedForecast(true);
+      } catch (error) {
+        console.error('Failed to generate AI forecast:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Failed to generate AI forecast';
+        
+        // Check if it's a temporary service issue
+        const isTemporaryError = errorMessage.includes('temporarily unavailable') || 
+                                  errorMessage.includes('overloaded') ||
+                                  errorMessage.includes('503');
+        
+        if (isTemporaryError) {
+          setForecastError('AI service temporarily unavailable. Showing traditional forecast. Please try regenerating in a few minutes.');
+        } else {
+          setForecastError(errorMessage);
+        }
+        
+        // Fallback to traditional forecast
+        setEnhancedForecast(forecast);
+        setHasCachedForecast(false);
+        
+        // Auto-clear error after 10 seconds for temporary issues
+        if (isTemporaryError) {
+          setTimeout(() => setForecastError(null), 10000);
+        }
+      } finally {
+        setIsGeneratingForecast(false);
+      }
+    };
+
+    generateForecast();
+  }, [allTransactions, forecast, useAIForecast, selectedForecastModel, generateCacheKey, loadCachedForecast, saveForecastToCache, forecastCacheKey, hasCachedForecast]);
+
+  const handleRegenerateForecast = async () => {
+    if (allTransactions.length === 0) return;
+
+    // Clear cache to force regeneration
+    setHasCachedForecast(false);
+    setForecastCacheKey('');
+    
+    setIsGeneratingForecast(true);
+    setForecastError(null);
+
+    try {
+      const aiForecastData = await generateAIForecast(allTransactions, selectedForecastModel);
+      const enhancedResult = buildForecast(allTransactions, 3, aiForecastData);
+      setEnhancedForecast(enhancedResult);
+      
+      // Save to cache
+      const cacheKey = generateCacheKey(allTransactions, selectedForecastModel);
+      saveForecastToCache(cacheKey, enhancedResult);
+      setForecastCacheKey(cacheKey);
+      setHasCachedForecast(true);
+    } catch (error) {
+      console.error('Failed to regenerate AI forecast:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to regenerate AI forecast';
+      
+      // Check if it's a temporary service issue
+      const isTemporaryError = errorMessage.includes('temporarily unavailable') || 
+                                errorMessage.includes('overloaded') ||
+                                errorMessage.includes('503');
+      
+      if (isTemporaryError) {
+        setForecastError('AI service temporarily unavailable. Please try again in a few minutes.');
+      } else {
+        setForecastError(errorMessage);
+      }
+      
+      // Auto-clear error after 10 seconds for temporary issues
+      if (isTemporaryError) {
+        setTimeout(() => setForecastError(null), 10000);
+      }
+    } finally {
+      setIsGeneratingForecast(false);
+    }
+  };
+
+  const toggleForecastMode = () => {
+    setUseAIForecast(!useAIForecast);
+    if (useAIForecast) {
+      // Switching to traditional
+      setEnhancedForecast(forecast);
+    }
+  };
+
+  // Close model selector when clicking outside
+  React.useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showForecastModelSelector) {
+        const target = event.target as HTMLElement;
+        if (!target.closest('.forecast-model-selector-container')) {
+          setShowForecastModelSelector(false);
+        }
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showForecastModelSelector]);
 
   const handleUploadClick = () => {
     (fileInputRef.current as HTMLInputElement | null)?.click();
@@ -106,6 +325,20 @@ const Dashboard: React.FC<DashboardProps> = ({
     }));
   }, []);
 
+  const handleAISearchResults = React.useCallback((results: Transaction[], query: string) => {
+    setAiSearchResults(results);
+    setAiSearchQuery(query);
+    // Scroll to transaction list
+    setTimeout(() => {
+      document.getElementById('transaction-list')?.scrollIntoView({ behavior: 'smooth' });
+    }, 100);
+  }, []);
+
+  const handleClearAISearch = React.useCallback(() => {
+    setAiSearchResults(null);
+    setAiSearchQuery('');
+  }, []);
+
   // Derived filtered dataset used by charts and transaction list.
   const chartFilteredTransactions = React.useMemo(() => {
     return allTransactions.filter(t => {
@@ -117,6 +350,11 @@ const Dashboard: React.FC<DashboardProps> = ({
   }, [allTransactions, filters.year, filters.monthYear, filters.category]);
 
   const filteredTransactions = React.useMemo(() => {
+    // If AI search is active, use those results instead
+    if (aiSearchResults !== null) {
+      return aiSearchResults;
+    }
+
     return allTransactions.filter(t => {
       const matchGlobal = filters.globalSearch
         ? Object.values(t).some(val => String(val).toLowerCase().includes(filters.globalSearch.toLowerCase()))
@@ -136,7 +374,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         
       return matchGlobal && matchDate && matchDescription && matchCategory && matchAmount && matchType && matchMonthYear;
     });
-  }, [allTransactions, filters]);
+  }, [allTransactions, filters, aiSearchResults]);
 
 
   // Days left until next month's 1st (data upload day)
@@ -269,7 +507,116 @@ const Dashboard: React.FC<DashboardProps> = ({
       {/* Removed standalone countdown block now that pill sits beside upload button */}
 
   <Summary summary={summary} />
-  <ForecastSummary forecast={forecast} />
+  
+  {/* Enhanced Forecast with AI Toggle */}
+  <div className="space-y-2">
+    {forecastError && (
+      <div className={`p-3 rounded-lg text-sm border ${
+        forecastError.includes('temporarily unavailable') 
+          ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200'
+          : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-800 dark:text-red-200'
+      }`}>
+        <div className="flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <div>
+            <strong className="font-semibold">
+              {forecastError.includes('temporarily unavailable') ? 'Service Notice:' : 'Forecast Error:'}
+            </strong>
+            {' '}{forecastError}
+          </div>
+        </div>
+      </div>
+    )}
+    
+    {/* Cached indicator */}
+    {hasCachedForecast && useAIForecast && !isGeneratingForecast && (
+      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-2 rounded-lg text-xs text-blue-800 dark:text-blue-200">
+        📦 Using cached forecast (valid for 24 hours) • Click "Regenerate" to refresh
+      </div>
+    )}
+    
+    <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center gap-2 flex-wrap">
+        <button
+          onClick={toggleForecastMode}
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+            useAIForecast 
+              ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300' 
+              : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
+          }`}
+        >
+          {useAIForecast ? (
+            <>
+              <Brain className="w-4 h-4" />
+              AI Forecast
+            </>
+          ) : (
+            <>
+              <BarChart3 className="w-4 h-4" />
+              Traditional Forecast
+            </>
+          )}
+        </button>
+        
+        {useAIForecast && (
+          <>
+            {/* Model Selector */}
+            <div className="relative forecast-model-selector-container">
+              <button
+                onClick={() => setShowForecastModelSelector(!showForecastModelSelector)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+              >
+                <Settings className="w-4 h-4" />
+                {getForecastModelDisplayName(selectedForecastModel)}
+              </button>
+              
+              {showForecastModelSelector && (
+                <div className="absolute top-full mt-1 left-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10 min-w-[200px]">
+                  <div className="p-2">
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mb-2 px-2">Select AI Model</div>
+                    {Object.entries(GEMINI_MODELS).map(([key, modelValue]) => (
+                      <button
+                        key={key}
+                        onClick={() => {
+                          setSelectedForecastModel(modelValue);
+                          setShowForecastModelSelector(false);
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                          selectedForecastModel === modelValue
+                            ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
+                            : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
+                        }`}
+                      >
+                        {getForecastModelDisplayName(modelValue)}
+                        {modelValue === GEMINI_MODELS.FLASH_LITE && ' (Default)'}
+                        {modelValue === GEMINI_MODELS.FLASH_LATEST && ' (Fallback)'}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="border-t border-gray-200 dark:border-gray-700 p-2">
+                    <p className="text-xs text-gray-500 dark:text-gray-400 px-2">
+                      Flash Lite is fast and efficient. Pro models provide deeper insights but use more tokens.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            <button
+              onClick={handleRegenerateForecast}
+              disabled={isGeneratingForecast}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={`w-4 h-4 ${isGeneratingForecast ? 'animate-spin' : ''}`} />
+              {isGeneratingForecast ? 'Generating...' : 'Regenerate'}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+    
+    <ForecastSummary forecast={enhancedForecast} />
+  </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <CategoryChart transactions={chartFilteredTransactions} />
@@ -277,6 +624,13 @@ const Dashboard: React.FC<DashboardProps> = ({
       </div>
       
   <MonthlySummaryTable userId={userId} transactions={allTransactions} onCellClick={handleMonthlyCellClick} onFiltersChange={handleSummaryFiltersChange} />
+
+      {/* Natural Language AI Search */}
+      <NaturalLanguageSearch
+        allTransactions={allTransactions}
+        onSearchResults={handleAISearchResults}
+        onClearSearch={handleClearAISearch}
+      />
 
       <div id="transaction-list" className="mt-4">
         {/* Unified transactions table styling: always use full feature TransactionList */}
@@ -288,10 +642,15 @@ const Dashboard: React.FC<DashboardProps> = ({
           onResetFilters={handleResetFilters}
           onEdit={onEditTransaction}
           onDelete={onDeleteTransaction}
+          onRefreshData={onRefreshData}
         />
       </div>
+
+      {/* Financial Advisor Chatbot */}
+      <FinancialAdvisorChat transactions={allTransactions} />
     </div>
   );
 };
+
 
 export default Dashboard;

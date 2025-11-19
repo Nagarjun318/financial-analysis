@@ -20,7 +20,7 @@ View your app in AI Studio: https://ai.studio/apps/drive/1eDyY73c_ZDTHanJiDs6unR
    ```bash
    VITE_SUPABASE_URL=your_supabase_project_url
    VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
-   GEMINI_API_KEY=your_gemini_api_key
+   VITE_GEMINI_API_KEY=your_gemini_api_key
    ```
 
 3. Start the development server:
@@ -32,10 +32,11 @@ View your app in AI Studio: https://ai.studio/apps/drive/1eDyY73c_ZDTHanJiDs6unR
 |----------|---------|
 | `VITE_SUPABASE_URL` | Supabase project REST URL |
 | `VITE_SUPABASE_ANON_KEY` | Supabase anon public client key (do not commit secrets) |
-| `GEMINI_API_KEY` | Used for AI insight generation (planned features) |
+| `VITE_GEMINI_API_KEY` | **Required for AI Search** - Google Gemini API key for natural language transaction search |
 
 ### Recent Improvements (Quick Wins)
 The following foundational improvements were added:
+- **AI-Powered Natural Language Search**: Search transactions using plain English queries like "show shopping expenses over ₹5000 last month" (see `AI_SEARCH_SETUP.md`)
 - Supabase credentials now loaded from env vars via `import.meta.env`.
 - Introduced an analytics module (`src/domain/analytics/summarize.ts`) consolidating summary, monthly, and category aggregation.
 - Added client-side duplicate detection before inserting staged transactions (`src/domain/transactions/dedupe.ts`).

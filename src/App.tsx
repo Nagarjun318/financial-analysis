@@ -251,6 +251,7 @@ const App: React.FC = () => {
                   isUploading={isUploading}
                   onEditTransaction={handleEditTransaction}
                   onDeleteTransaction={handleDeleteTransaction}
+                  onRefreshData={refetch}
                   userId={session.user.id}
                 />
               )}

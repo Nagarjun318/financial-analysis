@@ -23,6 +23,7 @@ const mapRowToTransaction = (r: TransactionRow): Transaction => {
   const rawAmount = (r.amount ?? r.Amount ?? 0);
   const amount = typeof rawAmount === 'number' ? rawAmount : parseFloat(String(rawAmount));
   const category = (r.category ?? r.Category ?? 'Other') as string;
+  const ai_category = r.ai_category as string | null | undefined;
   return {
     id: r.id,
     user_id: r.user_id,
@@ -30,7 +31,8 @@ const mapRowToTransaction = (r: TransactionRow): Transaction => {
     description,
     amount,
     category,
-    type: amount >= 0 ? 'credit' : 'debit'
+    type: amount >= 0 ? 'credit' : 'debit',
+    ai_category
   };
 };
 
