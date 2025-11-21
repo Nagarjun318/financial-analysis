@@ -96,3 +96,28 @@ export interface HomeService {
   created_at?: string;
   updated_at?: string;
 }
+
+// Service History - tracks all past service records
+export interface ServiceHistory {
+  id?: number;
+  service_id: number;
+  user_id?: string;
+  service_date: string;
+  service_provider?: string;
+  cost?: number;
+  notes?: string;
+  odometer_reading?: number; // For vehicles
+  work_performed?: string;
+  parts_replaced?: string[];
+  next_service_due?: string;
+  created_at?: string;
+}
+
+// Service Statistics
+export interface ServiceStatistics {
+  total_services: number;
+  total_cost: number;
+  average_cost: number;
+  last_service_date: string;
+  average_interval_days: number;
+}

@@ -1,14 +1,20 @@
 import React from 'react';
-import { Plus, Edit2, Trash2, Calendar, DollarSign, AlertCircle, CheckCircle, Clock } from 'lucide-react';
+import { Plus, Edit2, Trash2, Calendar, IndianRupee, AlertCircle, CheckCircle, Clock, Sparkles, History } from 'lucide-react';
 import { useHomeServices } from '../hooks/useHomeServices';
 import { HomeService } from '../types';
 import { supabase } from '../services/supabaseClient';
+import { ServiceAdvisorChat } from './ServiceAdvisorChat';
+import { ServiceInsightsDashboard } from './ServiceInsightsDashboard';
+import { ServiceHistoryModal } from './ServiceHistoryModal';
+import { detectServiceTypeAndSuggest } from '../services/geminiService';
 
 const ServicesPage: React.FC = () => {
   const [session, setSession] = React.useState(null as any);
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [editingService, setEditingService] = React.useState(null as HomeService | null);
   const [selectedServiceType, setSelectedServiceType] = React.useState(null as string | null);
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = React.useState(false);
+  const [historyModalService, setHistoryModalService] = React.useState<{ id: number; name: string } | null>(null);
   const [formData, setFormData] = React.useState({
     service_name: '',
     service_type: '',
@@ -40,7 +46,14 @@ const ServicesPage: React.FC = () => {
     isDeleting,
   } = useHomeServices(userId);
 
-  const serviceTypes = ['AC', 'Water Purifier', 'Geyser', 'Chimney', 'Washing Machine', 'Refrigerator', 'Car Service', 'Bike Service', 'Electricals', 'Plumbing', 'Painting', 'Pest Control', 'Custom'];
+  // Get unique service types from existing services + common defaults
+  const existingServiceTypes = React.useMemo(() => {
+    const types = new Set(services.map(s => s.service_type));
+    // Add common defaults if not present
+    const defaults = ['AC', 'Water Purifier', 'Geyser', 'Chimney', 'Washing Machine', 'Refrigerator', 'Car Service', 'Bike Service', 'Electricals', 'Plumbing', 'Painting', 'Pest Control'];
+    defaults.forEach(d => types.add(d));
+    return Array.from(types).sort();
+  }, [services]);
 
   const calculateNextServiceDate = (months: number, baseDate?: string): string => {
     const startDate = baseDate ? new Date(baseDate) : new Date();
@@ -68,11 +81,10 @@ const ServicesPage: React.FC = () => {
   const handleOpenModal = (service?: HomeService) => {
     if (service) {
       setEditingService(service);
-      const isCustomType = !serviceTypes.includes(service.service_type);
       setFormData({
         service_name: service.service_name,
-        service_type: isCustomType ? 'Custom' : service.service_type,
-        custom_service_type: isCustomType ? service.service_type : '',
+        service_type: service.service_type,
+        custom_service_type: '',
         last_service_date: service.last_service_date,
         next_service_due: service.next_service_due,
         service_provider: service.service_provider || '',
@@ -81,11 +93,12 @@ const ServicesPage: React.FC = () => {
       });
     } else {
       setEditingService(null);
+      const today = new Date().toISOString().split('T')[0];
       setFormData({
         service_name: '',
         service_type: '',
         custom_service_type: '',
-        last_service_date: '',
+        last_service_date: today,
         next_service_due: '',
         service_provider: '',
         cost: '',
@@ -102,21 +115,17 @@ const ServicesPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Validate custom service type if 'Custom' is selected
-    if (formData.service_type === 'Custom' && !formData.custom_service_type.trim()) {
-      alert('Please enter a custom service type');
+
+    // Validate service type
+    if (!formData.service_type.trim()) {
+      alert('Please enter a service name to detect service type');
       return;
     }
-
-    const finalServiceType = formData.service_type === 'Custom' 
-      ? formData.custom_service_type 
-      : formData.service_type;
 
     const serviceData = {
       user_id: userId,
       service_name: formData.service_name,
-      service_type: finalServiceType,
+      service_type: formData.service_type,
       last_service_date: formData.last_service_date,
       next_service_due: formData.next_service_due,
       service_provider: formData.service_provider || undefined,
@@ -146,12 +155,54 @@ const ServicesPage: React.FC = () => {
     }
   };
 
+  // AI Auto-detection when service name changes
+  React.useEffect(() => {
+    const detectAndSuggest = async () => {
+      if (!formData.service_name || editingService) {
+        return; // Don't suggest when editing existing service
+      }
+
+      // Only trigger if service name has meaningful content (more than 2 chars)
+      if (formData.service_name.length < 3) return;
+
+      setIsLoadingSuggestions(true);
+      try {
+        const suggestions = await detectServiceTypeAndSuggest(
+          formData.service_name,
+          services,
+          existingServiceTypes,
+          formData.last_service_date || undefined
+        );
+
+        if (suggestions) {
+          setFormData((prev: typeof formData) => ({
+            ...prev,
+            service_type: suggestions.detectedServiceType,
+            service_provider: suggestions.suggestedProvider || prev.service_provider,
+            cost: suggestions.suggestedCost !== undefined ? suggestions.suggestedCost.toString() : prev.cost,
+            notes: suggestions.suggestedNotes || prev.notes,
+            next_service_due: suggestions.suggestedNextServiceDate || prev.next_service_due,
+          }));
+        }
+      } catch (error) {
+        console.error('Error fetching AI suggestions:', error);
+      } finally {
+        setIsLoadingSuggestions(false);
+      }
+    };
+
+    // Debounce the API call
+    const timeoutId = setTimeout(detectAndSuggest, 800);
+    return () => clearTimeout(timeoutId);
+  }, [formData.service_name, formData.last_service_date]);
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    return date.toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'Asia/Kolkata' });
   };
 
   const formatCurrency = (amount: number | null | undefined) => {
+    if (amount === 0) return 'Free Service';
     if (!amount) return '-';
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
   };
@@ -187,6 +238,9 @@ const ServicesPage: React.FC = () => {
         </button>
       </div>
 
+      {/* AI Insights Dashboard */}
+      {services.length > 0 && <ServiceInsightsDashboard services={services} />}
+
       {/* Error Message */}
       {error && (
         <div className="glass-panel p-4 rounded-lg border-l-4 border-red-500">
@@ -208,7 +262,7 @@ const ServicesPage: React.FC = () => {
               Back to All Services
             </button>
           </div>
-          
+
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
@@ -226,7 +280,7 @@ const ServicesPage: React.FC = () => {
                 {filteredServices.map((service) => {
                   const status = getServiceStatus(service.next_service_due);
                   const StatusIcon = status.icon;
-                  
+
                   return (
                     <tr key={service.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50">
                       <td className="py-3 px-4">
@@ -303,7 +357,7 @@ const ServicesPage: React.FC = () => {
           {services.map((service) => {
             const status = getServiceStatus(service.next_service_due);
             const StatusIcon = status.icon;
-            
+
             return (
               <div key={service.id} className="glass-panel p-6 rounded-xl hover:shadow-lg transition-shadow">
                 {/* Header */}
@@ -326,6 +380,13 @@ const ServicesPage: React.FC = () => {
                     </h3>
                   </div>
                   <div className="flex gap-2">
+                    <button
+                      onClick={() => service.id && setHistoryModalService({ id: service.id, name: service.service_name })}
+                      className="p-2 text-gray-600 dark:text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition"
+                      title="View History"
+                    >
+                      <History className="h-4 w-4" />
+                    </button>
                     <button
                       onClick={() => handleOpenModal(service)}
                       className="p-2 text-gray-600 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition"
@@ -351,7 +412,7 @@ const ServicesPage: React.FC = () => {
                       {formatDate(service.last_service_date)}
                     </span>
                   </div>
-                  
+
                   <div className="flex items-center gap-2 text-sm">
                     <AlertCircle className="h-4 w-4 text-gray-500 dark:text-gray-400" />
                     <span className="text-gray-600 dark:text-gray-400">Next Due:</span>
@@ -369,9 +430,9 @@ const ServicesPage: React.FC = () => {
                     </div>
                   )}
 
-                  {service.cost && (
+                  {service.cost !== null && service.cost !== undefined && (
                     <div className="flex items-center gap-2 text-sm">
-                      <DollarSign className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+                      <IndianRupee className="h-4 w-4 text-gray-500 dark:text-gray-400" />
                       <span className="text-gray-600 dark:text-gray-400">Cost:</span>
                       <span className="font-semibold text-gray-900 dark:text-white">
                         {formatCurrency(service.cost)}
@@ -400,55 +461,51 @@ const ServicesPage: React.FC = () => {
             <h2 className="text-2xl font-bold gradient-text mb-6">
               {editingService ? 'Edit Service' : 'Add New Service'}
             </h2>
-            
+
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                    Service Name *
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
+                    Service Name / Brand *
+                    {isLoadingSuggestions && <Sparkles className="h-4 w-4 text-indigo-500 animate-pulse" />}
                   </label>
                   <input
                     type="text"
                     value={formData.service_name}
                     onChange={(e) => setFormData({ ...formData, service_name: e.target.value })}
                     className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    placeholder="e.g., Living Room AC"
+                    placeholder="e.g., Aquaguard, Voltas AC, Honda City"
                     required
                   />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    AI will detect service type from brand/name
+                  </p>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
                     Service Type *
+                    {isLoadingSuggestions && <Sparkles className="h-4 w-4 text-indigo-500 animate-pulse" />}
                   </label>
-                  <select
+                  <input
+                    type="text"
                     value={formData.service_type}
                     onChange={(e) => setFormData({ ...formData, service_type: e.target.value })}
                     className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    placeholder="AI will detect from service name (e.g., 'AC', 'Water Purifier')"
+                    list="service-types-list"
+                    readOnly={isLoadingSuggestions}
                     required
-                  >
-                    <option value="">Select a type</option>
-                    {serviceTypes.map((type) => (
-                      <option key={type} value={type}>{type}</option>
+                  />
+                  <datalist id="service-types-list">
+                    {existingServiceTypes.map((type: string) => (
+                      <option key={type} value={type} />
                     ))}
-                  </select>
+                  </datalist>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    AI auto-detects type from service name. You can also select from existing types or enter a new one.
+                  </p>
                 </div>
-
-                {formData.service_type === 'Custom' && (
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                      Custom Service Type *
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.custom_service_type}
-                      onChange={(e) => setFormData({ ...formData, custom_service_type: e.target.value })}
-                      className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                      placeholder="e.g., Pool Cleaning, Pest Control"
-                      required
-                    />
-                  </div>
-                )}
 
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
@@ -464,26 +521,39 @@ const ServicesPage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
                     Next Service Due *
+                    {isLoadingSuggestions && <Sparkles className="h-4 w-4 text-indigo-500 animate-pulse" />}
                   </label>
                   <div className="space-y-2">
-                    <div className="flex gap-2">
+                    <div className="grid grid-cols-4 gap-2">
                       <button
                         type="button"
-                        onClick={() => setFormData({ ...formData, next_service_due: calculateNextServiceDate(6, formData.last_service_date) })}
-                        className="flex-1 px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg transition"
-                        disabled={!formData.last_service_date}
+                        onClick={() => setFormData({ ...formData, next_service_due: calculateNextServiceDate(3, formData.last_service_date || undefined) })}
+                        className="px-2 py-1.5 text-xs bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 rounded-lg transition font-medium"
                       >
-                        6 Months
+                        +3M
                       </button>
                       <button
                         type="button"
-                        onClick={() => setFormData({ ...formData, next_service_due: calculateNextServiceDate(12, formData.last_service_date) })}
-                        className="flex-1 px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg transition"
-                        disabled={!formData.last_service_date}
+                        onClick={() => setFormData({ ...formData, next_service_due: calculateNextServiceDate(6, formData.last_service_date || undefined) })}
+                        className="px-2 py-1.5 text-xs bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 rounded-lg transition font-medium"
                       >
-                        1 Year
+                        +6M
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, next_service_due: calculateNextServiceDate(9, formData.last_service_date || undefined) })}
+                        className="px-2 py-1.5 text-xs bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 rounded-lg transition font-medium"
+                      >
+                        +9M
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, next_service_due: calculateNextServiceDate(12, formData.last_service_date || undefined) })}
+                        className="px-2 py-1.5 text-xs bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 rounded-lg transition font-medium"
+                      >
+                        +1Y
                       </button>
                     </div>
                     <input
@@ -493,6 +563,9 @@ const ServicesPage: React.FC = () => {
                       className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                       required
                     />
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {formData.last_service_date ? `From ${formatDate(formData.last_service_date)}` : 'From today'}
+                    </p>
                   </div>
                 </div>
 
@@ -540,7 +613,7 @@ const ServicesPage: React.FC = () => {
               <div className="flex gap-3 pt-4">
                 <button
                   type="submit"
-                  disabled={isCreating || isUpdating}
+                  disabled={isCreating || isUpdating || isLoadingSuggestions}
                   className="flex-1 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 text-white rounded-lg font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isCreating || isUpdating ? 'Saving...' : editingService ? 'Update Service' : 'Add Service'}
@@ -553,9 +626,30 @@ const ServicesPage: React.FC = () => {
                   Cancel
                 </button>
               </div>
+              {isLoadingSuggestions && (
+                <div className="flex items-center gap-2 text-sm text-indigo-600 dark:text-indigo-400 mt-2">
+                  <Sparkles className="h-4 w-4 animate-pulse" />
+                  <span>AI is suggesting details...</span>
+                </div>
+              )}
             </form>
           </div>
         </div>
+      )}
+
+      {/* Service Advisor Chatbot */}
+      <ServiceAdvisorChat services={services} />
+
+      {/* Service History Modal */}
+      {historyModalService && (
+        <ServiceHistoryModal
+          isOpen={true}
+          onClose={() => setHistoryModalService(null)}
+          serviceId={historyModalService.id}
+          serviceName={historyModalService.name}
+          userId={userId || 'demo-user'}
+          currentService={services.find(s => s.id === historyModalService.id)}
+        />
       )}
     </div>
   );

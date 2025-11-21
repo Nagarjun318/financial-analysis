@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../services/supabaseClient';
-import { HomeService } from '../types';
+import { HomeService, ServiceHistory, ServiceStatistics } from '../types';
 
 export function useHomeServices(userId: string | undefined) {
   const queryClient = useQueryClient();
@@ -14,7 +14,7 @@ export function useHomeServices(userId: string | undefined) {
         .select('*')
         .eq('user_id', userId)
         .order('next_service_due', { ascending: true });
-      
+
       if (error) throw error;
       return (data || []) as HomeService[];
     },
@@ -29,7 +29,7 @@ export function useHomeServices(userId: string | undefined) {
         .insert([newService])
         .select()
         .single();
-      
+
       if (error) throw error;
       return data;
     },
@@ -47,7 +47,7 @@ export function useHomeServices(userId: string | undefined) {
         .eq('id', id)
         .select()
         .single();
-      
+
       if (error) throw error;
       return data;
     },
@@ -63,7 +63,7 @@ export function useHomeServices(userId: string | undefined) {
         .from('services')
         .delete()
         .eq('id', id);
-      
+
       if (error) throw error;
     },
     onSuccess: () => {
@@ -82,5 +82,106 @@ export function useHomeServices(userId: string | undefined) {
     isCreating: createMutation.isPending,
     isUpdating: updateMutation.isPending,
     isDeleting: deleteMutation.isPending,
+  };
+}
+
+// Hook for service history
+export function useServiceHistory(serviceId: number | undefined) {
+  const queryClient = useQueryClient();
+
+  const { data: history = [], isLoading, error } = useQuery({
+    queryKey: ['serviceHistory', serviceId],
+    queryFn: async () => {
+      if (!serviceId || !supabase) return [];
+      const { data, error } = await supabase
+        .from('service_history')
+        .select('*')
+        .eq('service_id', serviceId)
+        .order('service_date', { ascending: false });
+
+      if (error) throw error;
+      return (data || []) as ServiceHistory[];
+    },
+    enabled: !!serviceId && !!supabase,
+  });
+
+  const { data: statistics } = useQuery({
+    queryKey: ['serviceStatistics', serviceId],
+    queryFn: async () => {
+      if (!serviceId || !supabase) return null;
+      const { data, error } = await supabase
+        .rpc('get_service_statistics', { p_service_id: serviceId })
+        .single();
+
+      if (error) throw error;
+      return data as ServiceStatistics;
+    },
+    enabled: !!serviceId && !!supabase,
+  });
+
+  const addHistoryMutation = useMutation({
+    mutationFn: async (newHistory: Omit<ServiceHistory, 'id' | 'created_at'>) => {
+      if (!supabase) throw new Error('Supabase not configured');
+      const { data, error } = await supabase
+        .from('service_history')
+        .insert([newHistory])
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['serviceHistory', serviceId] });
+      queryClient.invalidateQueries({ queryKey: ['serviceStatistics', serviceId] });
+    },
+  });
+
+  const updateHistoryMutation = useMutation({
+    mutationFn: async ({ id, updates }: { id: number; updates: Partial<ServiceHistory> }) => {
+      if (!supabase) throw new Error('Supabase not configured');
+      const { data, error } = await supabase
+        .from('service_history')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['serviceHistory', serviceId] });
+      queryClient.invalidateQueries({ queryKey: ['serviceStatistics', serviceId] });
+    },
+  });
+
+  const deleteHistoryMutation = useMutation({
+    mutationFn: async (id: number) => {
+      if (!supabase) throw new Error('Supabase not configured');
+      const { error } = await supabase
+        .from('service_history')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['serviceHistory', serviceId] });
+      queryClient.invalidateQueries({ queryKey: ['serviceStatistics', serviceId] });
+    },
+  });
+
+  return {
+    history,
+    statistics,
+    isLoading,
+    error,
+    addHistory: addHistoryMutation.mutateAsync,
+    updateHistory: updateHistoryMutation.mutateAsync,
+    deleteHistory: deleteHistoryMutation.mutateAsync,
+    isAdding: addHistoryMutation.isPending,
+    isUpdatingHistory: updateHistoryMutation.isPending,
+    isDeletingHistory: deleteHistoryMutation.isPending,
   };
 }

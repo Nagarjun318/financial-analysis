@@ -1,8 +1,10 @@
 import React from 'react';
 import { Transaction } from '../types.ts';
 import { formatCurrency } from '../utils.ts';
+import { Sparkles } from 'lucide-react';
 // Replaced localStorage budgets with Supabase-backed category budgets
 import { useCategoryBudgets, computeCategoryBudgetVariance } from '../hooks/useCategoryBudgets.ts';
+import { suggestCategoryBudget } from '../services/geminiService.ts';
 
 interface MonthlySummaryTableProps {
     userId: string;
@@ -12,12 +14,12 @@ interface MonthlySummaryTableProps {
 }
 
 const MonthlySummaryTable: React.FC<MonthlySummaryTableProps> = ({ userId, transactions, onCellClick, onFiltersChange }) => {
-    const years = React.useMemo((): (string|number)[] => {
+    const years = React.useMemo((): (string | number)[] => {
         // SAFER: Extract year via string slicing to avoid timezone bugs from `new Date()`.
         const yearSet = new Set<number>(transactions.map((t: Transaction) => {
             return t.date ? parseInt(t.date.substring(0, 4), 10) : NaN;
         }).filter((y: number) => !isNaN(y)));
-        
+
         // Ensure the current year is always an option in the dropdown.
         yearSet.add(new Date().getFullYear());
 
@@ -36,6 +38,7 @@ const MonthlySummaryTable: React.FC<MonthlySummaryTableProps> = ({ userId, trans
     const sessionUserId = null; // Placeholder: supply actual user id from higher-level context or props if needed
     const { budgets, saveBudget, removeBudget, loading: budgetsLoading } = useCategoryBudgets(userId);
     const [budgetInput, setBudgetInput] = React.useState('');
+    const [isAISuggesting, setIsAISuggesting] = React.useState(false);
 
     const categories = React.useMemo((): string[] => {
         const categorySet = new Set<string>();
@@ -63,7 +66,7 @@ const MonthlySummaryTable: React.FC<MonthlySummaryTableProps> = ({ userId, trans
                 return rawCategory.split('-').includes(selectedCategory);
             });
         }
-        
+
         return filtered;
     }, [transactions, selectedYear, selectedCategory]);
 
@@ -71,7 +74,7 @@ const MonthlySummaryTable: React.FC<MonthlySummaryTableProps> = ({ userId, trans
     const monthlyData = React.useMemo(() => {
         const data: { [key: string]: { revenue: number; expense: number } } = {};
 
-    filteredTransactions.forEach((t: Transaction) => {
+        filteredTransactions.forEach((t: Transaction) => {
             // SAFER: Use string slicing to get the month key (e.g., "2025-03").
             // This completely avoids timezone issues that can occur with `new Date(t.date)`.
             if (!t.date || !/^\d{4}-\d{2}-\d{2}$/.test(t.date)) {
@@ -116,8 +119,8 @@ const MonthlySummaryTable: React.FC<MonthlySummaryTableProps> = ({ userId, trans
     }, [filteredTransactions]);
 
     const grandTotal = React.useMemo(() => {
-    const totalRevenue = monthlyData.reduce((sum: number, d: any) => sum + d.revenue, 0);
-    const totalExpense = monthlyData.reduce((sum: number, d: any) => sum + d.expense, 0);
+        const totalRevenue = monthlyData.reduce((sum: number, d: any) => sum + d.revenue, 0);
+        const totalExpense = monthlyData.reduce((sum: number, d: any) => sum + d.expense, 0);
         const totalSavings = totalRevenue - totalExpense;
         const count = monthlyData.length;
         return {
@@ -154,61 +157,96 @@ const MonthlySummaryTable: React.FC<MonthlySummaryTableProps> = ({ userId, trans
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    // AI Budget Suggestion Handler
+    const handleAISuggestBudget = async () => {
+        if (!selectedCategory || selectedCategory === 'All') return;
+
+        setIsAISuggesting(true);
+        try {
+            const suggestion = await suggestCategoryBudget(
+                selectedCategory,
+                transactions,
+                selectedYear
+            );
+
+            // Set the suggested budget in the input
+            setBudgetInput(suggestion.suggestedBudget.toString());
+
+            // Show reasoning in a toast or alert
+            alert(`💡 AI Suggestion (${suggestion.confidence} confidence):\n\n₹${suggestion.suggestedBudget.toLocaleString('en-IN')}\n\n${suggestion.reasoning}`);
+        } catch (error) {
+            console.error('AI budget suggestion failed:', error);
+            alert('Failed to get AI suggestion. Please try again.');
+        } finally {
+            setIsAISuggesting(false);
+        }
+    };
+
     return (
         <div className="glass-panel animated-border p-4 sm:p-6 rounded-xl shadow-lg">
             <div className="flex flex-col sm:flex-row justify-between sm:items-center mb-4 gap-4">
-                 <h3 className="text-xl font-semibold gradient-text drop-shadow-sm">Monthly Summary</h3>
-                            <div className="flex items-center gap-4 flex-wrap">
-                                        <select
-                                                value={selectedYear}
-                                                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
-                                                    const val = e.target.value;
-                                                    setSelectedYear(val);
-                                                    if (onFiltersChange) onFiltersChange({ year: val, category: selectedCategory });
-                                                }}
+                <h3 className="text-xl font-semibold gradient-text drop-shadow-sm">Monthly Summary</h3>
+                <div className="flex items-center gap-4 flex-wrap">
+                    <select
+                        value={selectedYear}
+                        onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
+                            const val = e.target.value;
+                            setSelectedYear(val);
+                            if (onFiltersChange) onFiltersChange({ year: val, category: selectedCategory });
+                        }}
                         className="bg-light-bg dark:bg-dark-bg border border-gray-300 dark:border-gray-600 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-brand-primary"
                     >
                         {years.map((year: string | number) => <option key={String(year)} value={year}>{year}</option>)}
                     </select>
-                                        <select
-                                                value={selectedCategory}
-                                                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
-                                                    const val = e.target.value;
-                                                    setSelectedCategory(val);
-                                                    if (onFiltersChange) onFiltersChange({ year: selectedYear, category: val });
-                                                }}
+                    <select
+                        value={selectedCategory}
+                        onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
+                            const val = e.target.value;
+                            setSelectedCategory(val);
+                            if (onFiltersChange) onFiltersChange({ year: selectedYear, category: val });
+                        }}
                         className="bg-light-bg dark:bg-dark-bg border border-gray-300 dark:border-gray-600 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-brand-primary">
                         {categories.map((cat: string) => <option key={cat} value={cat}>{cat === 'All' ? 'All Categories' : cat}</option>)}
                     </select>
-                                        {selectedCategory !== 'All' && (
-                                            <div className="flex items-center gap-2">
-                                                <input
-                                                    id="budget-input"
-                                                    name="budget-input"
-                                                    type="number"
-                                                    placeholder="Budget (₹)"
-                                                    value={budgetInput}
-                                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBudgetInput(e.target.value)}
-                                                    className="w-28 bg-light-bg dark:bg-dark-bg border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-xs focus:ring-2 focus:ring-brand-primary"
-                                                />
-                                                                        <button
-                                                    type="button"
-                                                                            disabled={!userId || budgetsLoading}
-                                                                            onClick={() => { const v = parseFloat(budgetInput); if (!isNaN(v) && userId) { saveBudget({ category: selectedCategory, budget: v }); }}}
-                                                                            className="px-2 py-1 text-xs rounded bg-brand-primary text-white hover:bg-brand-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
-                                                                        >{budgetsLoading ? 'Saving...' : 'Save Budget'}</button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => { removeBudget(selectedCategory); setBudgetInput(''); }}
-                                                    className="px-2 py-1 text-xs rounded bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-gray-100 hover:bg-gray-400 dark:hover:bg-gray-500"
-                                                >Clear</button>
-                                            </div>
-                                        )}
-                 </div>
+                    {selectedCategory !== 'All' && (
+                        <div className="flex items-center gap-2">
+                            <input
+                                id="budget-input"
+                                name="budget-input"
+                                type="number"
+                                placeholder="Budget (₹)"
+                                value={budgetInput}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBudgetInput(e.target.value)}
+                                className="w-28 bg-light-bg dark:bg-dark-bg border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-xs focus:ring-2 focus:ring-brand-primary"
+                            />
+                            <button
+                                type="button"
+                                disabled={isAISuggesting}
+                                onClick={handleAISuggestBudget}
+                                className="px-2 py-1 text-xs rounded bg-purple-500 text-white hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                                title="Get AI budget suggestion"
+                            >
+                                <Sparkles className={`w-3 h-3 ${isAISuggesting ? 'animate-spin' : ''}`} />
+                                {isAISuggesting ? 'AI...' : 'AI'}
+                            </button>
+                            <button
+                                type="button"
+                                disabled={!userId || budgetsLoading}
+                                onClick={() => { const v = parseFloat(budgetInput); if (!isNaN(v) && userId) { saveBudget({ category: selectedCategory, budget: v }); } }}
+                                className="px-2 py-1 text-xs rounded bg-brand-primary text-white hover:bg-brand-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >{budgetsLoading ? 'Saving...' : 'Save Budget'}</button>
+                            <button
+                                type="button"
+                                onClick={() => { removeBudget(selectedCategory); setBudgetInput(''); }}
+                                className="px-2 py-1 text-xs rounded bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-gray-100 hover:bg-gray-400 dark:hover:bg-gray-500"
+                            >Clear</button>
+                        </div>
+                    )}
+                </div>
             </div>
 
             {/* Removed grand total header cards; footer now provides totals */}
-            
+
             <div className="overflow-x-auto max-h-[420px] overflow-y-auto" onScroll={handleScrollLoadMore}>
                 <table className="w-full text-sm table-fixed">
                     <colgroup>
@@ -237,37 +275,37 @@ const MonthlySummaryTable: React.FC<MonthlySummaryTableProps> = ({ userId, trans
                     </thead>
                     <tbody>
                         {visibleMonths.map((row: any) => {
-                            const savingsClasses = row.savings >= 0 
-                                ? 'text-emerald-700 dark:text-emerald-300' 
+                            const savingsClasses = row.savings >= 0
+                                ? 'text-emerald-700 dark:text-emerald-300'
                                 : 'text-red-700 dark:text-red-300';
 
-                            const expenseRatioClasses = row.expenseRatio > 0.6 
-                                ? 'text-red-700 dark:text-red-400 font-semibold' 
+                            const expenseRatioClasses = row.expenseRatio > 0.6
+                                ? 'text-red-700 dark:text-red-400 font-semibold'
                                 : '';
 
-                            const savingsRatioClasses = row.savingsRatio > 0.4 
-                                ? 'text-green-700 dark:text-green-300 font-semibold' 
+                            const savingsRatioClasses = row.savingsRatio > 0.4
+                                ? 'text-green-700 dark:text-green-300 font-semibold'
                                 : '';
 
                             const variance = selectedCategory !== 'All' ? computeCategoryBudgetVariance(row.key, selectedCategory, filteredTransactions, budgets) : null;
                             const varianceClasses = variance && variance.variance !== undefined && variance.variance > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-300';
                             return (
                                 <tr key={row.month} className="gradient-table-row border-b border-gray-200 dark:border-gray-700 last:border-b-0">
-                                    <td 
+                                    <td
                                         className="px-3 py-2 font-medium cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                                         onClick={() => onCellClick(row.key, null, selectedCategory)}
                                         title={`Filter transactions for ${row.month}`}
                                     >
                                         {row.month}
                                     </td>
-                                    <td 
+                                    <td
                                         className="px-3 py-2 text-right font-mono cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                                         onClick={() => onCellClick(row.key, 'credit', selectedCategory)}
                                         title={`Filter revenue for ${row.month}`}
                                     >
                                         {formatCurrency(row.revenue)}
                                     </td>
-                                    <td 
+                                    <td
                                         className="px-3 py-2 text-right font-mono cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                                         onClick={() => onCellClick(row.key, 'debit', selectedCategory)}
                                         title={`Filter expenses for ${row.month}`}
@@ -295,7 +333,7 @@ const MonthlySummaryTable: React.FC<MonthlySummaryTableProps> = ({ userId, trans
                             <td className="px-3 py-2 font-mono text-right text-green-700 dark:text-green-300">{formatCurrency(grandTotal.revenue)}</td>
                             <td className="px-3 py-2 font-mono text-right text-red-700 dark:text-red-300">{formatCurrency(grandTotal.expense)}</td>
                             <td className={`px-3 py-2 font-mono text-right font-semibold ${grandTotal.savings >= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-700 dark:text-red-300'}`}>{formatCurrency(grandTotal.savings)}</td>
-                            <td className="px-3 py-2" colSpan={selectedCategory !== 'All' ?  (selectedCategory !== 'All' ? 5 : 3) : 3}></td>
+                            <td className="px-3 py-2" colSpan={selectedCategory !== 'All' ? (selectedCategory !== 'All' ? 5 : 3) : 3}></td>
                         </tr>
                     </tfoot>
                 </table>

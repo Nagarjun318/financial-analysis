@@ -67,7 +67,15 @@ export function useLastUpload(userId: string | undefined) {
 export function formatLastUpload(iso: string | null): string {
   if (!iso) return '—';
   try {
-    return new Date(iso).toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return new Date(iso).toLocaleDateString('en-IN', { 
+      weekday: 'short', 
+      year: 'numeric', 
+      month: 'short', 
+      day: 'numeric', 
+      hour: '2-digit', 
+      minute: '2-digit',
+      timeZone: 'Asia/Kolkata'
+    });
   } catch {
     return iso;
   }

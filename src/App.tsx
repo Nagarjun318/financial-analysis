@@ -7,6 +7,7 @@ import HomePage from './components/HomePage.tsx';
 import AboutPage from './components/AboutPage.tsx';
 import ServicesPage from './components/ServicesPage.tsx';
 import InvestmentPage from './components/InvestmentPage.tsx';
+import GroceriesPage from './components/GroceriesPage.tsx';
 import Auth from './components/Auth';
 import Dashboard from './components/Dashboard';
 import StagingModal from './components/StagingModal';
@@ -34,7 +35,7 @@ const App: React.FC = () => {
   const [isStagingModalOpen, setIsStagingModalOpen] = React.useState(false);
   const [stagedFileName, setStagedFileName] = React.useState(null as string | null);
   const [isConfirming, setIsConfirming] = React.useState(false);
-  
+
   // Editing transaction
   const [editingTransaction, setEditingTransaction] = React.useState(null as Transaction | null);
   const [isEditModalOpen, setIsEditModalOpen] = React.useState(false);
@@ -112,6 +113,7 @@ const App: React.FC = () => {
         Description: string;
         Amount: number;
         Category: string;
+        AI_Category?: string | null;
         user_id: string;
       };
 
@@ -120,6 +122,7 @@ const App: React.FC = () => {
         Description: t.description,
         Amount: t.amount,
         Category: t.category,
+        AI_Category: t.ai_category || null,
         user_id: session.user.id,
       }));
 
@@ -129,12 +132,13 @@ const App: React.FC = () => {
         description: r.Description,
         amount: r.Amount,
         category: r.Category,
+        ai_category: r.AI_Category,
       })) as any);
 
       setIsStagingModalOpen(false);
       setStagedTransactions([]);
       setStagedFileName(null);
-  await refetch();
+      await refetch();
 
       if (duplicateCount > 0) {
         setError(`Inserted ${transactionsToInsert.length} new transactions. Skipped ${duplicateCount} duplicates.`);
@@ -152,27 +156,27 @@ const App: React.FC = () => {
     setEditingTransaction(transaction);
     setIsEditModalOpen(true);
   };
-  
+
   const handleConfirmEdit = async (updatedTransaction: Transaction) => {
     if (!updatedTransaction.id) return;
     setError(null);
     try {
-        // Recalculate category in case description changed
-        const category = getCategory(updatedTransaction.description);
-    const transactionToUpdate = {
-      date: updatedTransaction.date,
-      description: updatedTransaction.description,
-      amount: updatedTransaction.amount,
-      category: category,
-    };
+      // Recalculate category in case description changed
+      const transactionToUpdate = {
+        date: updatedTransaction.date,
+        description: updatedTransaction.description,
+        amount: updatedTransaction.amount,
+        category: updatedTransaction.category,
+        ai_category: updatedTransaction.ai_category,
+      };
 
-        await update({ id: updatedTransaction.id, values: transactionToUpdate } as any);
-        setIsEditModalOpen(false);
-        setEditingTransaction(null);
-        await refetch();
+      await update({ id: updatedTransaction.id, values: transactionToUpdate } as any);
+      setIsEditModalOpen(false);
+      setEditingTransaction(null);
+      await refetch();
     } catch (err: any) {
-        setError(err.message || 'Failed to update transaction.');
-        console.error('Error updating transaction:', err);
+      setError(err.message || 'Failed to update transaction.');
+      console.error('Error updating transaction:', err);
     }
   };
 
@@ -203,7 +207,7 @@ const App: React.FC = () => {
               Object.keys(localStorage)
                 .filter(k => k.toLowerCase().includes('supabase'))
                 .forEach(k => localStorage.removeItem(k));
-            } catch {}
+            } catch { }
             setError('Sign out encountered an auth 403. Local session cleared locally.');
           }
         }
@@ -224,11 +228,11 @@ const App: React.FC = () => {
   if (!session) {
     return <Auth />;
   }
-  
+
   return (
     <div className="min-h-screen bg-light-bg dark:bg-dark-bg text-light-text dark:text-dark-text font-sans">
-      <Navbar 
-        currentSection={currentSection} 
+      <Navbar
+        currentSection={currentSection}
         onSectionChange={setCurrentSection}
         userEmail={session.user?.email}
         onSignOut={handleSignOut}
@@ -256,34 +260,36 @@ const App: React.FC = () => {
                 />
               )}
               {currentSection === 'investment' && <InvestmentPage />}
+              {currentSection === 'groceries' && <GroceriesPage userId={session.user.id} />}
             </div>
           </>
         )}
-        {error && 
-            <div className="fixed bottom-4 right-4 bg-red-500 text-white p-4 rounded-lg shadow-lg z-50">
-                <div className="flex items-center justify-between">
-                    <p className="font-semibold pr-4">{error}</p>
-                    <button onClick={() => setError(null)} className="text-xl font-bold leading-none">&times;</button>
-                </div>
+        {error &&
+          <div className="fixed bottom-4 right-4 bg-red-500 text-white p-4 rounded-lg shadow-lg z-50">
+            <div className="flex items-center justify-between">
+              <p className="font-semibold pr-4">{error}</p>
+              <button onClick={() => setError(null)} className="text-xl font-bold leading-none">&times;</button>
             </div>
+          </div>
         }
       </main>
-      
-      <StagingModal 
+
+      <StagingModal
         isOpen={isStagingModalOpen}
         onClose={() => setIsStagingModalOpen(false)}
         transactions={stagedTransactions}
         onConfirm={handleConfirmStagedTransactions}
+        onTransactionsUpdate={setStagedTransactions}
         fileName={stagedFileName}
         isConfirming={isConfirming}
       />
-      
+
       {editingTransaction && (
         <EditTransactionModal
-            isOpen={isEditModalOpen}
-            onClose={() => setIsEditModalOpen(false)}
-            transaction={editingTransaction}
-            onConfirm={handleConfirmEdit}
+          isOpen={isEditModalOpen}
+          onClose={() => setIsEditModalOpen(false)}
+          transaction={editingTransaction}
+          onConfirm={handleConfirmEdit}
         />
       )}
     </div>

@@ -1,8 +1,8 @@
 import React from 'react';
-import { MessageCircle, Send, Sparkles, X, Settings, Loader2, Bot, User, Trash2 } from 'lucide-react';
-import { Transaction } from '../types';
+import { MessageCircle, Send, Sparkles, X, Settings, Loader2, Bot, User, Trash2, Wrench } from 'lucide-react';
+import { HomeService } from '../types';
 import { GEMINI_MODELS, GeminiModel } from '../services/geminiService';
-import { getFinancialAdvice } from '../services/geminiService';
+import { getServiceAdvice } from '../services/geminiService';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -13,16 +13,16 @@ interface Message {
   timestamp: Date;
 }
 
-interface FinancialAdvisorChatProps {
-  transactions: Transaction[];
+interface ServiceAdvisorChatProps {
+  services: HomeService[];
 }
 
-export function FinancialAdvisorChat({ transactions }: FinancialAdvisorChatProps) {
+export function ServiceAdvisorChat({ services }: ServiceAdvisorChatProps) {
   const [isOpen, setIsOpen] = React.useState(false);
   const [messages, setMessages] = React.useState([{
     id: '1',
     role: 'assistant' as const,
-    content: "Hello! 👋 I'm your AI Financial Advisor. I can help you with:\n\n💰 Increasing your savings\n📉 Reducing expenses\n📊 Analyzing spending patterns\n💡 Providing personalized financial advice\n🎯 Setting financial goals\n⚠️ Identifying spending issues\n\nAsk me anything about your finances!",
+    content: "Hello! 👋 I'm your AI Service Advisor. I can help you with:\n\n🔧 Service maintenance schedules\n💰 Cost optimization strategies\n⚠️ Overdue service alerts\n📅 Planning upcoming services\n💡 Maintenance recommendations\n\nAsk me anything about your home services!",
     timestamp: new Date()
   }]);
   const [input, setInput] = React.useState('');
@@ -33,52 +33,39 @@ export function FinancialAdvisorChat({ transactions }: FinancialAdvisorChatProps
   const messagesEndRef = React.useRef(null as HTMLDivElement | null);
   const modelSelectorRef = React.useRef(null as HTMLDivElement | null);
 
-  // Generate context-aware suggestions based on transaction data
   const getSuggestions = React.useMemo(() => {
-    const totalIncome = transactions.filter(t => t.type === 'credit').reduce((sum, t) => sum + Math.abs(t.amount), 0);
-    const totalExpenses = transactions.filter(t => t.type === 'debit').reduce((sum, t) => sum + Math.abs(t.amount), 0);
-    const savingsRate = totalIncome > 0 ? ((totalIncome - totalExpenses) / totalIncome) * 100 : 0;
-
-    // Get top expense categories
-    const categoryExpenses = transactions
-      .filter(t => t.type === 'debit')
-      .reduce((acc, t) => {
-        const cat = t.category || 'Other';
-        acc[cat] = (acc[cat] || 0) + Math.abs(t.amount);
-        return acc;
-      }, {} as Record<string, number>);
-
-    const topCategory = Object.entries(categoryExpenses)
-      .sort(([, a], [, b]) => b - a)[0];
+    const overdueServices = services.filter(s => new Date(s.next_service_due) < new Date());
+    const upcomingServices = services.filter(s => {
+      const dueDate = new Date(s.next_service_due);
+      const today = new Date();
+      const diffDays = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      return diffDays > 0 && diffDays <= 30;
+    });
 
     const suggestions: string[] = [];
 
-    // Base suggestions
     if (messages.length <= 2) {
+      if (overdueServices.length > 0) {
+        suggestions.push("What services are overdue?");
+      }
+      if (upcomingServices.length > 0) {
+        suggestions.push("What services are due soon?");
+      }
       suggestions.push(
-        "How can I increase my savings?",
-        "Analyze my spending patterns",
-        "What am I spending too much on?",
-        "Give me a financial health summary"
+        "How can I reduce service costs?",
+        "Give me maintenance recommendations"
       );
     } else {
-      // Context-aware suggestions based on data
-      if (savingsRate < 20) {
-        suggestions.push("How can I save more money?");
-      }
-      if (topCategory) {
-        suggestions.push(`Why is my ${topCategory[0]} spending high?`);
-      }
       suggestions.push(
-        "What should I do to improve my finances?",
-        "Give me tips to reduce expenses",
-        "Am I making any financial mistakes?",
-        "What are my biggest spending categories?"
+        "What's my service health status?",
+        "How much will I spend next month?",
+        "Which services need priority?",
+        "Give me cost-saving tips"
       );
     }
 
-    return suggestions.slice(0, 4); // Return top 4 suggestions
-  }, [transactions, messages.length]);
+    return suggestions.slice(0, 4);
+  }, [services, messages.length]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -88,7 +75,6 @@ export function FinancialAdvisorChat({ transactions }: FinancialAdvisorChatProps
     scrollToBottom();
   }, [messages]);
 
-  // Click outside to close model selector
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (modelSelectorRef.current && !modelSelectorRef.current.contains(event.target as Node)) {
@@ -101,6 +87,12 @@ export function FinancialAdvisorChat({ transactions }: FinancialAdvisorChatProps
     }
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showModelSelector]);
+
+  React.useEffect(() => {
+    if (isOpen && messages.length <= 2 && !input.trim()) {
+      setShowSuggestions(true);
+    }
+  }, [isOpen, messages.length, input]);
 
   const getModelDisplayName = (model: GeminiModel): string => {
     switch (model) {
@@ -119,16 +111,15 @@ export function FinancialAdvisorChat({ transactions }: FinancialAdvisorChatProps
     }
   };
 
-  const handleSend = async (content?: string | React.MouseEvent) => {
-    const messageText = (typeof content === 'string' ? content : input).trim();
-    if (!messageText || isLoading) return;
+  const handleSend = async () => {
+    if (!input.trim() || isLoading) return;
 
-    setShowSuggestions(false); // Hide suggestions when sending
+    setShowSuggestions(false);
 
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: messageText,
+      content: input.trim(),
       timestamp: new Date()
     };
 
@@ -137,9 +128,9 @@ export function FinancialAdvisorChat({ transactions }: FinancialAdvisorChatProps
     setIsLoading(true);
 
     try {
-      const response = await getFinancialAdvice(
-        messageText,
-        transactions,
+      const response = await getServiceAdvice(
+        input.trim(),
+        services,
         messages,
         selectedModel
       );
@@ -173,7 +164,11 @@ export function FinancialAdvisorChat({ transactions }: FinancialAdvisorChatProps
   };
 
   const handleSuggestionClick = (suggestion: string) => {
-    handleSend(suggestion);
+    setInput(suggestion);
+    setShowSuggestions(false);
+    setTimeout(() => {
+      handleSend();
+    }, 100);
   };
 
   const handleInputFocus = () => {
@@ -193,22 +188,14 @@ export function FinancialAdvisorChat({ transactions }: FinancialAdvisorChatProps
     setMessages([{
       id: '1',
       role: 'assistant',
-      content: "Hello! 👋 I'm your AI Financial Advisor. Ask me anything about your finances!",
+      content: "Hello! 👋 I'm your AI Service Advisor. Ask me anything about your home services!",
       timestamp: new Date()
     }]);
-    setShowSuggestions(true); // Show suggestions after clearing
+    setShowSuggestions(true);
   };
-
-  // Show suggestions when chat opens
-  React.useEffect(() => {
-    if (isOpen && messages.length <= 2 && !input.trim()) {
-      setShowSuggestions(true);
-    }
-  }, [isOpen, messages.length, input]);
 
   return (
     <>
-      {/* Backdrop Overlay */}
       {isOpen && (
         <div
           className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40 transition-opacity duration-300"
@@ -217,37 +204,33 @@ export function FinancialAdvisorChat({ transactions }: FinancialAdvisorChatProps
         />
       )}
 
-      {/* Toggle Button */}
       {!isOpen && (
         <button
           onClick={() => setIsOpen(true)}
-          className="fixed top-1/2 right-0 -translate-y-1/2 p-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg hover:shadow-xl transition-all duration-300 z-50 group rounded-l-xl"
-          aria-label="Open Financial Advisor"
-          title="Chat with AI Financial Advisor"
+          className="fixed top-1/2 right-0 -translate-y-1/2 p-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg hover:shadow-xl transition-all duration-300 z-50 group rounded-l-xl"
+          aria-label="Open Service Advisor"
+          title="Chat with AI Service Advisor"
         >
           <MessageCircle className="w-6 h-6 group-hover:scale-110 transition-transform" />
           <span className="absolute top-2 right-2 w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
         </button>
       )}
 
-      {/* Side Pane */}
       <div
         className={`fixed top-0 right-0 h-screen bg-white dark:bg-gray-900 shadow-2xl flex flex-col z-50 border-l border-gray-200 dark:border-gray-700 transition-all duration-300 ease-in-out ${isOpen ? 'w-full sm:w-[420px] md:w-[480px] lg:w-[520px] translate-x-0' : 'w-0 translate-x-full'
-          }`}
+          } `}
       >
-        {/* Header */}
-        <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-4 flex items-center justify-between flex-shrink-0">
+        <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-4 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
-              <Bot className="w-6 h-6 text-white" />
+              <Wrench className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h3 className="font-semibold text-white text-lg">Financial Advisor</h3>
-              <p className="text-xs text-white/80">AI-powered insights</p>
+              <h3 className="font-semibold text-white text-lg">Service Advisor</h3>
+              <p className="text-xs text-white/80">AI-powered maintenance help</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {/* Model Selector */}
             <div className="relative" ref={modelSelectorRef}>
               <button
                 onClick={() => setShowModelSelector(!showModelSelector)}
@@ -270,8 +253,8 @@ export function FinancialAdvisorChat({ transactions }: FinancialAdvisorChatProps
                         setShowModelSelector(false);
                       }}
                       className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors ${selectedModel === model
-                          ? 'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 font-medium'
-                          : 'text-gray-700 dark:text-gray-300'
+                        ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 font-medium'
+                        : 'text-gray-700 dark:text-gray-300'
                         }`}
                     >
                       {getModelDisplayName(model)}
@@ -284,7 +267,6 @@ export function FinancialAdvisorChat({ transactions }: FinancialAdvisorChatProps
               )}
             </div>
 
-            {/* Clear Chat */}
             <button
               onClick={clearChat}
               className="p-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors text-white"
@@ -293,7 +275,6 @@ export function FinancialAdvisorChat({ transactions }: FinancialAdvisorChatProps
               <Trash2 className="w-5 h-5" />
             </button>
 
-            {/* Close Button */}
             <button
               onClick={() => setIsOpen(false)}
               className="p-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors text-white"
@@ -304,26 +285,23 @@ export function FinancialAdvisorChat({ transactions }: FinancialAdvisorChatProps
           </div>
         </div>
 
-        {/* Messages */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50 dark:bg-gray-800/50">
           {messages.map((message: Message) => (
             <div
               key={message.id}
               className={`flex gap-3 ${message.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
             >
-              {/* Avatar */}
               <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${message.role === 'user'
                   ? 'bg-gradient-to-br from-blue-500 to-cyan-500'
-                  : 'bg-gradient-to-br from-purple-500 to-pink-500'
+                  : 'bg-gradient-to-br from-indigo-500 to-purple-500'
                 }`}>
                 {message.role === 'user' ? (
                   <User className="w-5 h-5 text-white" />
                 ) : (
-                  <Bot className="w-5 h-5 text-white" />
+                  <Wrench className="w-5 h-5 text-white" />
                 )}
               </div>
 
-              {/* Message Bubble */}
               <div
                 className={`max-w-[75%] rounded-2xl px-4 py-2.5 ${message.role === 'user'
                     ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white'
@@ -353,13 +331,13 @@ export function FinancialAdvisorChat({ transactions }: FinancialAdvisorChatProps
 
           {isLoading && (
             <div className="flex gap-3">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center flex-shrink-0">
-                <Bot className="w-5 h-5 text-white" />
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center flex-shrink-0">
+                <Wrench className="w-5 h-5 text-white" />
               </div>
               <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl px-4 py-3">
                 <div className="flex items-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin text-purple-600" />
-                  <span className="text-sm text-gray-600 dark:text-gray-400">Thinking...</span>
+                  <Loader2 className="w-4 h-4 animate-spin text-indigo-600" />
+                  <span className="text-sm text-gray-600 dark:text-gray-400">Analyzing...</span>
                 </div>
               </div>
             </div>
@@ -368,16 +346,14 @@ export function FinancialAdvisorChat({ transactions }: FinancialAdvisorChatProps
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Input Area */}
         <div className="p-4 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 flex-shrink-0">
-          {/* Suggestion Chips */}
           {showSuggestions && !isLoading && (
             <div className="mb-3 flex flex-wrap gap-2 animate-in fade-in slide-in-from-bottom-2 duration-300">
               {getSuggestions.map((suggestion: string, index: number) => (
                 <button
                   key={index}
                   onClick={() => handleSuggestionClick(suggestion)}
-                  className="px-3 py-1.5 text-xs rounded-full bg-gradient-to-r from-purple-100 to-pink-100 dark:from-purple-900/30 dark:to-pink-900/30 text-purple-700 dark:text-purple-300 hover:from-purple-200 hover:to-pink-200 dark:hover:from-purple-800/40 dark:hover:to-pink-800/40 transition-all hover:scale-105 border border-purple-200 dark:border-purple-700"
+                  className="px-3 py-1.5 text-xs rounded-full bg-gradient-to-r from-indigo-100 to-purple-100 dark:from-indigo-900/30 dark:to-purple-900/30 text-indigo-700 dark:text-indigo-300 hover:from-indigo-200 hover:to-purple-200 dark:hover:from-indigo-800/40 dark:hover:to-purple-800/40 transition-all hover:scale-105 border border-indigo-200 dark:border-indigo-700"
                 >
                   💡 {suggestion}
                 </button>
@@ -391,15 +367,15 @@ export function FinancialAdvisorChat({ transactions }: FinancialAdvisorChatProps
               onChange={handleInputChange}
               onFocus={handleInputFocus}
               onKeyPress={handleKeyPress}
-              placeholder="Ask about your finances..."
-              className="flex-1 resize-none bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none max-h-24"
+              placeholder="Ask about your services..."
+              className="flex-1 resize-none bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none max-h-24"
               rows={2}
               disabled={isLoading}
             />
             <button
               onClick={handleSend}
               disabled={!input.trim() || isLoading}
-              className="p-3 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none flex-shrink-0"
+              className="p-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none flex-shrink-0"
               title="Send message"
             >
               <Send className="w-5 h-5" />
@@ -415,4 +391,4 @@ export function FinancialAdvisorChat({ transactions }: FinancialAdvisorChatProps
   );
 }
 
-export default FinancialAdvisorChat;
+export default ServiceAdvisorChat;

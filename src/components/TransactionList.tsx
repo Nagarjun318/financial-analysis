@@ -245,8 +245,8 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, filters
             onClick={handlePredictCategories}
             disabled={isPredicting || allHaveAICategories}
             className={`px-3 py-1.5 text-sm rounded-md transition-colors flex items-center gap-1.5 ${isPredicting || allHaveAICategories
-                ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed'
-                : 'bg-purple-600 text-white hover:bg-purple-700'
+              ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+              : 'bg-purple-600 text-white hover:bg-purple-700'
               }`}
             title={allHaveAICategories ? 'All transactions have AI categories' : 'Predict categories using AI'}
             aria-label="Predict AI categories"
@@ -267,8 +267,8 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, filters
             onClick={handleClearPredictions}
             disabled={isClearing || transactionsNeedingAI.length === transactions.length}
             className={`px-3 py-1.5 text-sm rounded-md transition-colors flex items-center gap-1.5 ${isClearing || transactionsNeedingAI.length === transactions.length
-                ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed'
-                : 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-800/40'
+              ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+              : 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-800/40'
               }`}
             title="Clear all AI predictions"
             aria-label="Clear AI predictions"
@@ -403,7 +403,7 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, filters
           </tbody>
           <tfoot className="sticky bottom-0 z-10 bg-gray-100 dark:bg-gray-700/50 shadow-inner">
             <tr className="font-semibold">
-              <td colSpan={4} className="px-4 py-3 text-right">Total</td>
+              <td colSpan={5} className="px-4 py-3 text-right">Total</td>
               <td className="px-4 py-3 font-mono text-right">{formatAmount(totalAmount, totalAmount >= 0 ? 'credit' : 'debit')}</td>
               <td></td>
             </tr>

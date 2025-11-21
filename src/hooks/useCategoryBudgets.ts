@@ -33,7 +33,7 @@ export function useCategoryBudgets(userId: string | undefined) {
       if (!userId) throw new Error('Missing user id');
       const { error } = await (supabase as any)
         .from('category_budget')
-        .upsert({ user_id: userId, category: payload.category, budget: payload.budget })
+        .upsert({ user_id: userId, category: payload.category, budget: payload.budget }, { onConflict: 'user_id,category' })
         .select();
       if (error) throw error;
     },

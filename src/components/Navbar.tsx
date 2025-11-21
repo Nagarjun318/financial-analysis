@@ -1,5 +1,5 @@
 import React from 'react';
-import { Menu, X, Home, User, Briefcase, TrendingUp, PieChart, LogOut } from 'lucide-react';
+import { Menu, X, Home, User, Briefcase, TrendingUp, PieChart, LogOut, ShoppingCart } from 'lucide-react';
 import ThemeSwitcher from './ThemeSwitcher.tsx';
 
 interface NavbarProps {
@@ -18,6 +18,7 @@ const Navbar: React.FC<NavbarProps> = ({ currentSection, onSectionChange, userEm
     { id: 'services', label: 'Services', icon: Briefcase },
     { id: 'finance', label: 'Finance', icon: PieChart },
     { id: 'investment', label: 'Investment', icon: TrendingUp },
+    { id: 'groceries', label: 'Groceries', icon: ShoppingCart },
   ];
 
   const handleNavClick = (sectionId: string) => {
@@ -32,7 +33,7 @@ const Navbar: React.FC<NavbarProps> = ({ currentSection, onSectionChange, userEm
           {/* Logo/Brand */}
           <div className="flex items-center">
             <div className="flex-shrink-0">
-              <h1 className="text-xl font-bold gradient-text">FinanceHub</h1>
+              <h1 className="text-xl font-bold gradient-text">MyAllInOne</h1>
             </div>
           </div>
 
@@ -46,11 +47,10 @@ const Navbar: React.FC<NavbarProps> = ({ currentSection, onSectionChange, userEm
                   <button
                     key={item.id}
                     onClick={() => handleNavClick(item.id)}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
-                      isActive
-                        ? 'rainbow-text bg-indigo-50 dark:bg-indigo-900/30'
-                        : 'text-gray-700 dark:text-gray-200 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800'
-                    }`}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 ${isActive
+                      ? 'rainbow-text bg-indigo-50 dark:bg-indigo-900/30'
+                      : 'text-gray-700 dark:text-gray-200 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800'
+                      }`}
                   >
                     <Icon className="h-4 w-4" />
                     {item.label}
@@ -104,11 +104,10 @@ const Navbar: React.FC<NavbarProps> = ({ currentSection, onSectionChange, userEm
                   <button
                     key={item.id}
                     onClick={() => handleNavClick(item.id)}
-                    className={`flex items-center gap-3 w-full px-3 py-2 rounded-md text-base font-medium transition-all duration-200 ${
-                      isActive
-                        ? 'rainbow-text bg-indigo-50 dark:bg-indigo-900/30'
-                        : 'text-gray-700 dark:text-gray-200 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800'
-                    }`}
+                    className={`flex items-center gap-3 w-full px-3 py-2 rounded-md text-base font-medium transition-all duration-200 ${isActive
+                      ? 'rainbow-text bg-indigo-50 dark:bg-indigo-900/30'
+                      : 'text-gray-700 dark:text-gray-200 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800'
+                      }`}
                   >
                     <Icon className="h-5 w-5" />
                     {item.label}

@@ -1,0 +1,1 @@
+ALTER TABLE shopping_list ADD COLUMN price NUMERIC DEFAULT 0;
