@@ -1,5 +1,5 @@
 import React from 'react';
-import { TrendingUp, AlertCircle, Loader2, MapPin } from 'lucide-react';
+import { TrendingUp, AlertCircle, Loader2, MapPin, Edit2, Check, X } from 'lucide-react';
 import { estimateMarketValue, MarketValueEstimate } from '../services/netWorthAI';
 import { GEMINI_MODELS, GeminiModel } from '../services/geminiService';
 
@@ -18,10 +18,26 @@ export const AIMarketValue: React.FC<AIMarketValueProps> = ({
     const [isLoading, setIsLoading] = React.useState(false);
     const [error, setError] = React.useState(false);
     const [selectedModel, setSelectedModel] = React.useState(GEMINI_MODELS.FLASH_LATEST as GeminiModel);
+    const [location, setLocation] = React.useState(() => localStorage.getItem(`location_${assetName}`) || 'Chennai');
+    const [isEditingLocation, setIsEditingLocation] = React.useState(false);
+    const [tempLocation, setTempLocation] = React.useState(location);
+
+    const handleSaveLocation = () => {
+        if (tempLocation.trim()) {
+            setLocation(tempLocation);
+            localStorage.setItem(`location_${assetName}`, tempLocation);
+            setIsEditingLocation(false);
+        }
+    };
+
+    const handleCancelLocation = () => {
+        setTempLocation(location);
+        setIsEditingLocation(false);
+    };
 
     const fetchMarketValue = React.useCallback(async (force = false) => {
         // Check cache first if not forced
-        const cacheKey = `market_value_${assetName}_${assetType}_${currentValue}_${selectedModel}`;
+        const cacheKey = `market_value_${assetName}_${assetType}_${currentValue}_${location}_${selectedModel}`;
         if (!force) {
             const cached = localStorage.getItem(cacheKey);
             if (cached) {
@@ -41,7 +57,7 @@ export const AIMarketValue: React.FC<AIMarketValueProps> = ({
         setIsLoading(true);
         setError(false);
         try {
-            const result = await estimateMarketValue(assetName, assetType, currentValue, selectedModel);
+            const result = await estimateMarketValue(assetName, assetType, currentValue, location, selectedModel);
             setMarketData(result);
             // Cache the result
             localStorage.setItem(cacheKey, JSON.stringify({
@@ -54,7 +70,7 @@ export const AIMarketValue: React.FC<AIMarketValueProps> = ({
         } finally {
             setIsLoading(false);
         }
-    }, [assetName, assetType, currentValue, selectedModel]);
+    }, [assetName, assetType, currentValue, location, selectedModel]);
 
     React.useEffect(() => {
         fetchMarketValue();
@@ -65,7 +81,7 @@ export const AIMarketValue: React.FC<AIMarketValueProps> = ({
             <div className="mt-3 p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-100 dark:border-indigo-800 animate-pulse">
                 <div className="flex items-center gap-2 text-xs text-indigo-600 dark:text-indigo-400">
                     <Loader2 className="w-3 h-3 animate-spin" />
-                    <span>AI analyzing Chennai market trends...</span>
+                    <span>AI analyzing {location} market trends...</span>
                 </div>
             </div>
         );
@@ -124,10 +140,37 @@ export const AIMarketValue: React.FC<AIMarketValueProps> = ({
                     </div>
                     <span className="text-xs font-semibold text-indigo-900 dark:text-indigo-100">AI Market Estimate</span>
                 </div>
-                <div className="flex items-center gap-1 text-[10px] text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 px-2 py-0.5 rounded-full border border-gray-200 dark:border-gray-700 mr-16 group-hover/card:mr-24 transition-all">
-                    <MapPin className="w-2.5 h-2.5" />
-                    Chennai
-                </div>
+                {isEditingLocation ? (
+                    <div className="flex items-center gap-1 mr-16">
+                        <input
+                            type="text"
+                            value={tempLocation}
+                            onChange={(e) => setTempLocation(e.target.value)}
+                            className="text-[10px] px-2 py-0.5 rounded border border-indigo-300 focus:outline-none focus:border-indigo-500 w-24"
+                            autoFocus
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleSaveLocation();
+                                if (e.key === 'Escape') handleCancelLocation();
+                            }}
+                        />
+                        <button onClick={handleSaveLocation} className="p-0.5 hover:bg-green-100 rounded text-green-600">
+                            <Check className="w-3 h-3" />
+                        </button>
+                        <button onClick={handleCancelLocation} className="p-0.5 hover:bg-red-100 rounded text-red-600">
+                            <X className="w-3 h-3" />
+                        </button>
+                    </div>
+                ) : (
+                    <div
+                        className="flex items-center gap-1 text-[10px] text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 px-2 py-0.5 rounded-full border border-gray-200 dark:border-gray-700 mr-16 group-hover/card:mr-24 transition-all cursor-pointer hover:border-indigo-300 hover:text-indigo-600"
+                        onClick={() => setIsEditingLocation(true)}
+                        title="Click to change location"
+                    >
+                        <MapPin className="w-2.5 h-2.5" />
+                        {location}
+                        <Edit2 className="w-2.5 h-2.5 opacity-0 group-hover/card:opacity-50" />
+                    </div>
+                )}
             </div>
 
             <div className="flex items-baseline gap-2 mb-1">

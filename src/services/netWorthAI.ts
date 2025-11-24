@@ -152,21 +152,22 @@ export async function estimateMarketValue(
   assetName: string,
   assetType: string,
   currentValue: number,
+  location: string = "Chennai, India",
   model: GeminiModel = GEMINI_MODELS.FLASH_LATEST
 ): Promise<MarketValueEstimate> {
-  const prompt = `Estimate the current market value for this asset in Chennai, India.
+  const prompt = `Estimate the current market value for this asset in ${location}.
 
 Asset: ${assetName}
 Type: ${assetType}
 Recorded Value: ₹${currentValue.toLocaleString()}
 
-Provide market insights specific to Chennai and suggest if the recorded value seems reasonable.
+Provide market insights specific to ${location} and suggest if the recorded value seems reasonable.
 
 Respond in JSON format:
 {
   "estimatedValue": <number>,
   "confidence": "<high|medium|low>",
-  "marketTrends": "<brief market trend analysis for Chennai>",
+  "marketTrends": "<brief market trend analysis for ${location}>",
   "source": "<reasoning for estimate>"
 }`;
 

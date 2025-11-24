@@ -582,6 +582,29 @@ const GroceriesPage: React.FC<{ userId: string }> = ({ userId }) => {
         setExpandedCategories(newExpanded);
     };
 
+    const pickAllInCategory = async (categoryItems: ShoppingListItem[]) => {
+        if (!supabase) return;
+
+        const allPicked = categoryItems.every(i => i.is_picked);
+        const targetState = !allPicked;
+        const idsToUpdate = categoryItems.map(i => i.id);
+
+        try {
+            const { error } = await supabase
+                .from('shopping_list')
+                .update({ is_picked: targetState })
+                .in('id', idsToUpdate);
+
+            if (error) throw error;
+
+            setShoppingList(shoppingList.map(i =>
+                idsToUpdate.includes(i.id) ? { ...i, is_picked: targetState } : i
+            ));
+        } catch (error) {
+            console.error('Error updating category items:', error);
+        }
+    };
+
     // Filter items
     const filteredItems = items.filter((item: GroceryItem) => {
         const matchesSearch = item.item_name.toLowerCase().includes(searchQuery.toLowerCase());
@@ -1268,105 +1291,121 @@ const GroceriesPage: React.FC<{ userId: string }> = ({ userId }) => {
                             </div>
                         ) : (
                             <div className="grid gap-6">
-                                {(Object.entries(shoppingByCategory) as [string, ShoppingListItem[]][]).map(([category, categoryItems]) => (
-                                    <div key={category} className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-                                        <div className="px-6 py-3 bg-gray-50/80 dark:bg-gray-800/80 border-b border-gray-100 dark:border-gray-700 flex items-center gap-2">
-                                            <span className="font-bold text-gray-800 dark:text-white">{category}</span>
-                                            <span className="px-2 py-0.5 text-xs font-medium bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-full">
-                                                {categoryItems.length}
-                                            </span>
-                                        </div>
-                                        <div className="divide-y divide-gray-100 dark:divide-gray-700/50">
-                                            {categoryItems.map((item: ShoppingListItem) => {
-                                                const inventoryItem = items.find((i: GroceryItem) => i.id === item.grocery_id);
-                                                return (
-                                                    <div
-                                                        key={item.id}
-                                                        className="px-6 py-4 group transition-all hover:bg-gray-50/80 dark:hover:bg-gray-700/30"
-                                                    >
-                                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                                                            <div className="flex-1">
-                                                                <div className="flex items-center gap-3">
-                                                                    <div className={`h-5 w-5 rounded border flex items-center justify-center cursor-pointer transition-colors ${item.is_picked ? 'bg-gray-400 border-gray-400' : 'border-gray-300 dark:border-gray-600 hover:border-brand-primary'
-                                                                        }`}
-                                                                        onClick={() => togglePicked(item)}
-                                                                    >
-                                                                        {item.is_picked && <Check className="h-3 w-3 text-white" />}
-                                                                    </div>
-                                                                    <h4 className={`text-base font-medium decoration-gray-400 ${item.is_picked ? 'text-gray-400 line-through' : 'text-gray-900 dark:text-white'}`}>
-                                                                        {item.item_name}
-                                                                        {item.package_size && (
-                                                                            <span className="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">
-                                                                                ({item.package_size})
+                                {(Object.entries(shoppingByCategory) as [string, ShoppingListItem[]][])
+                                    .sort(([catA, itemsA], [catB, itemsB]) => {
+                                        const allPickedA = itemsA.every(i => i.is_picked);
+                                        const allPickedB = itemsB.every(i => i.is_picked);
+                                        if (allPickedA && !allPickedB) return 1;
+                                        if (!allPickedA && allPickedB) return -1;
+                                        return catA.localeCompare(catB);
+                                    })
+                                    .map(([category, categoryItems]) => (
+                                        <div key={category} className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+                                            <div className="px-6 py-3 bg-gray-50/80 dark:bg-gray-800/80 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="font-bold text-gray-800 dark:text-white">{category}</span>
+                                                    <span className="px-2 py-0.5 text-xs font-medium bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-full">
+                                                        {categoryItems.length}
+                                                    </span>
+                                                </div>
+                                                <button
+                                                    onClick={() => pickAllInCategory(categoryItems)}
+                                                    className="text-xs font-medium text-brand-primary hover:text-brand-secondary transition-colors"
+                                                >
+                                                    {categoryItems.every(i => i.is_picked) ? 'Unpick All' : 'Pick All'}
+                                                </button>
+                                            </div>
+                                            <div className="divide-y divide-gray-100 dark:divide-gray-700/50">
+                                                {categoryItems.map((item: ShoppingListItem) => {
+                                                    const inventoryItem = items.find((i: GroceryItem) => i.id === item.grocery_id);
+                                                    return (
+                                                        <div
+                                                            key={item.id}
+                                                            className="px-6 py-4 group transition-all hover:bg-gray-50/80 dark:hover:bg-gray-700/30"
+                                                        >
+                                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                                                <div className="flex-1">
+                                                                    <div className="flex items-center gap-3">
+                                                                        <div className={`h-5 w-5 rounded border flex items-center justify-center cursor-pointer transition-colors ${item.is_picked ? 'bg-gray-400 border-gray-400' : 'border-gray-300 dark:border-gray-600 hover:border-brand-primary'
+                                                                            }`}
+                                                                            onClick={() => togglePicked(item)}
+                                                                        >
+                                                                            {item.is_picked && <Check className="h-3 w-3 text-white" />}
+                                                                        </div>
+                                                                        <h4 className={`text-base font-medium decoration-gray-400 ${item.is_picked ? 'text-gray-400 line-through' : 'text-gray-900 dark:text-white'}`}>
+                                                                            {item.item_name}
+                                                                            {item.package_size && (
+                                                                                <span className="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">
+                                                                                    ({item.package_size})
+                                                                                </span>
+                                                                            )}
+                                                                        </h4>
+                                                                        {item.is_auto_added && (
+                                                                            <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 rounded-full">
+                                                                                Auto
                                                                             </span>
                                                                         )}
-                                                                    </h4>
-                                                                    {item.is_auto_added && (
-                                                                        <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 rounded-full">
-                                                                            Auto
+                                                                    </div>
+                                                                    <div className="ml-8 mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500 dark:text-gray-400">
+                                                                        <span className="font-medium text-gray-700 dark:text-gray-300">
+                                                                            Qty: {item.quantity} {item.unit}
                                                                         </span>
-                                                                    )}
-                                                                </div>
-                                                                <div className="ml-8 mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500 dark:text-gray-400">
-                                                                    <span className="font-medium text-gray-700 dark:text-gray-300">
-                                                                        Qty: {item.quantity} {item.unit}
-                                                                    </span>
 
-                                                                    {/* Price Display */}
-                                                                    {(item.price || (inventoryItem && inventoryItem.price > 0)) && (
-                                                                        <>
-                                                                            <span className="hidden sm:inline text-gray-300 dark:text-gray-600">|</span>
-                                                                            <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-4 sm:items-center">
-                                                                                <span>
-                                                                                    {formatCurrency(item.price || (inventoryItem ? inventoryItem.price : 0))} each
-                                                                                </span>
-                                                                                <span className="text-xs font-semibold text-brand-primary dark:text-brand-light">
-                                                                                    Total: {formatCurrency((item.price || (inventoryItem ? inventoryItem.price : 0)) * item.quantity)}
-                                                                                </span>
-                                                                            </div>
-                                                                        </>
-                                                                    )}
+                                                                        {/* Price Display */}
+                                                                        {(item.price || (inventoryItem && inventoryItem.price > 0)) && (
+                                                                            <>
+                                                                                <span className="hidden sm:inline text-gray-300 dark:text-gray-600">|</span>
+                                                                                <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-4 sm:items-center">
+                                                                                    <span>
+                                                                                        {formatCurrency(item.price || (inventoryItem ? inventoryItem.price : 0))} each
+                                                                                    </span>
+                                                                                    <span className="text-xs font-semibold text-brand-primary dark:text-brand-light">
+                                                                                        Total: {formatCurrency((item.price || (inventoryItem ? inventoryItem.price : 0)) * item.quantity)}
+                                                                                    </span>
+                                                                                </div>
+                                                                            </>
+                                                                        )}
 
-                                                                    {inventoryItem && inventoryItem.last_purchased_date && (
-                                                                        <>
-                                                                            <span className="hidden sm:inline text-gray-300 dark:text-gray-600">|</span>
-                                                                            <span className="text-xs text-gray-400">
-                                                                                Last: {new Date(inventoryItem.last_purchased_date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', timeZone: 'Asia/Kolkata' })}
-                                                                            </span>
-                                                                        </>
-                                                                    )}
+                                                                        {inventoryItem && inventoryItem.last_purchased_date && (
+                                                                            <>
+                                                                                <span className="hidden sm:inline text-gray-300 dark:text-gray-600">|</span>
+                                                                                <span className="text-xs text-gray-400">
+                                                                                    Last: {new Date(inventoryItem.last_purchased_date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', timeZone: 'Asia/Kolkata' })}
+                                                                                </span>
+                                                                            </>
+                                                                        )}
+                                                                    </div>
                                                                 </div>
-                                                            </div>
-                                                            <div className="flex items-center gap-3 ml-8 sm:ml-0">
-                                                                <button
-                                                                    onClick={() => markAsPurchased(item)}
-                                                                    className="flex items-center gap-2 px-4 py-2 bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 rounded-xl hover:bg-green-100 dark:hover:bg-green-900/40 transition-all font-medium text-sm"
-                                                                >
-                                                                    <Check className="h-4 w-4" />
-                                                                    <span className="hidden sm:inline">Purchased</span>
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => handleEditShoppingItem(item)}
-                                                                    className="p-2 text-gray-500 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
-                                                                    title="Edit item"
-                                                                >
-                                                                    <Edit2 className="h-5 w-5" />
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => deleteShoppingItem(item.id)}
-                                                                    className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                                                                    title="Remove from list"
-                                                                >
-                                                                    <Trash2 className="h-5 w-5" />
-                                                                </button>
+                                                                <div className="flex items-center gap-3 ml-8 sm:ml-0">
+                                                                    <button
+                                                                        onClick={() => markAsPurchased(item)}
+                                                                        className="flex items-center gap-2 px-4 py-2 bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 rounded-xl hover:bg-green-100 dark:hover:bg-green-900/40 transition-all font-medium text-sm"
+                                                                    >
+                                                                        <Check className="h-4 w-4" />
+                                                                        <span className="hidden sm:inline">Purchased</span>
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => handleEditShoppingItem(item)}
+                                                                        className="p-2 text-gray-500 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                                                                        title="Edit item"
+                                                                    >
+                                                                        <Edit2 className="h-5 w-5" />
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => deleteShoppingItem(item.id)}
+                                                                        className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                                                                        title="Remove from list"
+                                                                    >
+                                                                        <Trash2 className="h-5 w-5" />
+                                                                    </button>
+                                                                </div>
                                                             </div>
                                                         </div>
-                                                    </div>
-                                                );
-                                            })}
+                                                    );
+                                                })}
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    ))}
                             </div>
                         )}
                     </div>
