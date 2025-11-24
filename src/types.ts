@@ -121,3 +121,16 @@ export interface ServiceStatistics {
   last_service_date: string;
   average_interval_days: number;
 }
+
+export interface FinancialGoal {
+  id: string;
+  user_id?: string;
+  name: string;
+  target_amount: number;
+  current_amount: number;
+  deadline: string; // YYYY-MM-DD
+  category: 'savings' | 'investment' | 'debt' | 'purchase' | 'other';
+  priority: 'high' | 'medium' | 'low';
+  notes?: string;
+  created_at?: string;
+}

@@ -1,11 +1,10 @@
 import React from 'react';
 const { useState, useEffect } = React;
 import { supabase } from '../services/supabaseClient';
-import { Plus, Trash2, ShoppingCart, Loader2, AlertTriangle, Minus, ChevronDown, ChevronRight, Check, Sparkles, Send, Bot, Edit2, X } from 'lucide-react';
-import { getKitchenAssistance, KitchenAssistanceResult, suggestGroceryItemDetails } from '../services/geminiService';
+import { Plus, Trash2, ShoppingCart, Loader2, AlertTriangle, Minus, ChevronDown, ChevronRight, Check, Edit2, X, Sparkles, Bot } from 'lucide-react';
+import { suggestGroceryItemDetails } from '../services/geminiService';
 import { formatCurrency } from '../utils';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { GroceryAdvisorChat } from './GroceryAdvisorChat';
 
 // Types
 interface GroceryItem {
@@ -44,20 +43,13 @@ const GroceriesPage: React.FC<{ userId: string }> = ({ userId }) => {
     const [items, setItems] = useState([] as GroceryItem[]);
     const [shoppingList, setShoppingList] = useState([] as ShoppingListItem[]);
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState('inventory' as 'inventory' | 'shopping' | 'ai-chef');
+    const [activeTab, setActiveTab] = useState('inventory' as 'inventory' | 'shopping');
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('All');
 
     // Dynamic categories: base categories + user-created categories from existing items
     const [availableCategories, setAvailableCategories] = useState(BASE_CATEGORIES as string[]);
     const [expandedCategories, setExpandedCategories] = useState(new Set(BASE_CATEGORIES));
-
-    // AI Chat State
-    const [aiMessages, setAiMessages] = useState([
-        { role: 'assistant', content: "Hi! I'm your AI Kitchen Assistant. I can help you plan meals, suggest recipes based on your inventory, or manage your shopping list. What's on your mind?" }
-    ] as Array<{ role: 'user' | 'assistant', content: string, suggestedItems?: any[] }>);
-    const [aiInput, setAiInput] = useState('');
-    const [isAiLoading, setIsAiLoading] = useState(false);
     const [isSuggestingDetails, setIsSuggestingDetails] = useState(false);
 
     const [newItem, setNewItem] = useState({
@@ -76,6 +68,7 @@ const GroceriesPage: React.FC<{ userId: string }> = ({ userId }) => {
 
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [editingItem, setEditingItem] = useState(null as GroceryItem | null);
+    const [chatPanelWidth, setChatPanelWidth] = useState(0);
 
     // Fetch data
     useEffect(() => {
@@ -547,38 +540,6 @@ const GroceriesPage: React.FC<{ userId: string }> = ({ userId }) => {
         }
     };
 
-    const handleAiSend = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!aiInput.trim() || isAiLoading) return;
-
-        const userMessage = aiInput.trim();
-        setAiMessages((prev: any[]) => [...prev, { role: 'user', content: userMessage }]);
-        setAiInput('');
-        setIsAiLoading(true);
-
-        try {
-            const result = await getKitchenAssistance(
-                userMessage,
-                items,
-                shoppingList
-            );
-
-            setAiMessages((prev: any[]) => [...prev, {
-                role: 'assistant',
-                content: result.response,
-                suggestedItems: result.suggestedShoppingItems
-            }]);
-        } catch (error) {
-            console.error('AI error:', error);
-            setAiMessages((prev: any[]) => [...prev, {
-                role: 'assistant',
-                content: "I'm sorry, I encountered an error while processing your request. Please try again."
-            }]);
-        } finally {
-            setIsAiLoading(false);
-        }
-    };
-
     const addSuggestedItems = async (suggestedItems: any[]) => {
         if (!supabase) return;
 
@@ -651,7 +612,7 @@ const GroceriesPage: React.FC<{ userId: string }> = ({ userId }) => {
     // ... (keep existing state and logic)
 
     return (
-        <div className="space-y-8 animate-fadeIn pb-20">
+        <div className="space-y-8 animate-fadeIn pb-20" style={{ marginRight: `${chatPanelWidth}px`, transition: 'margin-right 0.3s ease-in-out' }}>
             {/* Header Section */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
@@ -701,16 +662,6 @@ const GroceriesPage: React.FC<{ userId: string }> = ({ userId }) => {
                             }`}>
                             {shoppingList.length}
                         </span>
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('ai-chef')}
-                        className={`px-6 py-2.5 rounded-xl font-medium transition-all duration-300 flex items-center gap-2 ${activeTab === 'ai-chef'
-                            ? 'bg-white dark:bg-gray-700 text-brand-primary shadow-sm scale-[1.02]'
-                            : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-200/50 dark:hover:bg-gray-700/30'
-                            }`}
-                    >
-                        <Sparkles className="h-4 w-4" />
-                        <span>AI Chef</span>
                     </button>
                 </div>
             </div>
@@ -1434,122 +1385,15 @@ const GroceriesPage: React.FC<{ userId: string }> = ({ userId }) => {
                             <p className="text-xs text-gray-500 dark:text-gray-400">Powered by Gemini AI</p>
                         </div>
                     </div>
-
-                    <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                        {aiMessages.map((msg: any, idx: number) => (
-                            <div key={idx} className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                                <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${msg.role === 'user' ? 'bg-gray-200 dark:bg-gray-700' : 'bg-brand-primary/10 text-brand-primary'}`}>
-                                    {msg.role === 'user' ? <div className="w-2 h-2 bg-gray-500 rounded-full" /> : <Sparkles className="h-4 w-4" />}
-                                </div>
-                                <div className={`flex flex-col gap-2 max-w-[80%]`}>
-                                    <div className={`p-4 rounded-2xl ${msg.role === 'user'
-                                        ? 'bg-brand-primary text-white rounded-tr-none'
-                                        : 'bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-sm rounded-tl-none text-gray-800 dark:text-gray-200'
-                                        }`}>
-                                        <div className="prose dark:prose-invert text-sm max-w-none">
-                                            <ReactMarkdown
-                                                remarkPlugins={[remarkGfm]}
-                                                components={{
-                                                    p: ({ node, ...props }: any) => <p className="mb-2 last:mb-0" {...props} />,
-                                                    ul: ({ node, ...props }: any) => <ul className="list-disc pl-5 mb-2" {...props} />,
-                                                    li: ({ node, ...props }: any) => <li className="pl-1" {...props} />,
-                                                    strong: ({ node, ...props }: any) => <strong className="font-semibold text-brand-primary dark:text-brand-secondary" {...props} />,
-                                                }}
-                                            >
-                                                {msg.content}
-                                            </ReactMarkdown>
-                                        </div>
-                                    </div>
-                                    {msg.suggestedItems && msg.suggestedItems.length > 0 && (
-                                        <div className="bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl p-4 animate-fadeIn">
-                                            <h4 className="text-sm font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-                                                <ShoppingCart className="h-4 w-4 text-brand-primary" />
-                                                Suggested Shopping List
-                                            </h4>
-                                            <ul className="space-y-2 mb-4">
-                                                {msg.suggestedItems.map((item: any, i: number) => (
-                                                    <li key={i} className="text-sm text-gray-600 dark:text-gray-300 flex items-center justify-between bg-white dark:bg-gray-800 p-2 rounded-lg border border-gray-100 dark:border-gray-700">
-                                                        <span>{item.item_name}</span>
-                                                        <span className="text-xs font-medium bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded-full">
-                                                            {item.quantity} {item.unit}
-                                                        </span>
-                                                    </li>
-                                                ))}
-                                            </ul>
-                                            <button
-                                                onClick={() => addSuggestedItems(msg.suggestedItems!)}
-                                                className="w-full py-2 bg-brand-primary text-white rounded-lg text-sm font-medium hover:bg-brand-primary/90 transition-colors flex items-center justify-center gap-2"
-                                            >
-                                                <Plus className="h-4 w-4" />
-                                                Add All to Shopping List
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        ))}
-                        {isAiLoading && (
-                            <div className="flex gap-4">
-                                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-brand-primary/10 text-brand-primary flex items-center justify-center">
-                                    <Sparkles className="h-4 w-4" />
-                                </div>
-                                <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-sm rounded-2xl rounded-tl-none p-4 flex items-center gap-2">
-                                    <Loader2 className="h-4 w-4 animate-spin text-brand-primary" />
-                                    <span className="text-sm text-gray-500">Thinking...</span>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-800/50 backdrop-blur-md">
-                        {/* Suggestion Chips */}
-                        {!isAiLoading && aiMessages.length <= 2 && (
-                            <div className="mb-3 flex flex-wrap gap-2 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                                {[
-                                    "🍳 Suggest recipes with my ingredients",
-                                    "📋 Create a weekly meal plan",
-                                    "🛒 What should I buy this week?",
-                                    "💡 Quick dinner ideas"
-                                ].map((suggestion, index) => (
-                                    <button
-                                        key={index}
-                                        onClick={() => {
-                                            setAiInput(suggestion.replace(/^[^\s]+\s/, '')); // Remove emoji
-                                            setTimeout(() => {
-                                                const form = document.querySelector('form');
-                                                if (form) {
-                                                    form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
-                                                }
-                                            }, 100);
-                                        }}
-                                        className="px-3 py-1.5 text-xs rounded-full bg-gradient-to-r from-brand-primary/10 to-purple-100 dark:from-brand-primary/20 dark:to-purple-900/30 text-brand-primary dark:text-brand-secondary hover:from-brand-primary/20 hover:to-purple-200 dark:hover:from-brand-primary/30 dark:hover:to-purple-800/40 transition-all hover:scale-105 border border-brand-primary/20 dark:border-brand-primary/30"
-                                    >
-                                        {suggestion}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
-
-                        <form onSubmit={handleAiSend} className="flex gap-2">
-                            <input
-                                type="text"
-                                value={aiInput}
-                                onChange={e => setAiInput(e.target.value)}
-                                placeholder="Ask for recipes, meal plans, or shopping advice..."
-                                className="flex-1 px-4 py-3 rounded-xl border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary transition-all"
-                                disabled={isAiLoading}
-                            />
-                            <button
-                                type="submit"
-                                disabled={!aiInput.trim() || isAiLoading}
-                                className="px-4 py-3 bg-brand-primary text-white rounded-xl hover:bg-brand-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                <Send className="h-5 w-5" />
-                            </button>
-                        </form>
-                    </div>
                 </div>
             )}
+
+            {/* Grocery Advisor Chat Component */}
+            <GroceryAdvisorChat
+                groceries={items}
+                onAddToShoppingList={addSuggestedItems}
+                onOpenChange={setChatPanelWidth}
+            />
 
         </div>
     );

@@ -1,5 +1,6 @@
 import React from 'react';
-import { MessageCircle, Send, Sparkles, X, Settings, Loader2, Bot, User, Trash2, Wrench } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { MessageCircle, Send, Sparkles, X, Settings, Loader2, Bot, User, Wrench, Plus } from 'lucide-react';
 import { HomeService } from '../types';
 import { GEMINI_MODELS, GeminiModel } from '../services/geminiService';
 import { getServiceAdvice } from '../services/geminiService';
@@ -15,24 +16,67 @@ interface Message {
 
 interface ServiceAdvisorChatProps {
   services: HomeService[];
+  onOpenChange?: (width: number) => void;
 }
 
-export function ServiceAdvisorChat({ services }: ServiceAdvisorChatProps) {
+export function ServiceAdvisorChat({ services, onOpenChange }: ServiceAdvisorChatProps) {
   const [isOpen, setIsOpen] = React.useState(false);
-  const [messages, setMessages] = React.useState([{
+  const [width, setWidth] = React.useState(450);
+  const [isResizing, setIsResizing] = React.useState(false);
+
+  const [messages, setMessages] = React.useState<Message[]>([{
     id: '1',
-    role: 'assistant' as const,
-    content: "Hello! 👋 I'm your AI Service Advisor. I can help you with:\n\n🔧 Service maintenance schedules\n💰 Cost optimization strategies\n⚠️ Overdue service alerts\n📅 Planning upcoming services\n💡 Maintenance recommendations\n\nAsk me anything about your home services!",
+    role: 'assistant',
+    content: "Hello! 👋 I'm your AI Service Advisor. I can help you with:\n\n🔧 Service maintenance schedules\n💰 Cost optimization strategies\n⚠️ Overdue service alerts\n📅 Planning upcoming services\n💡 Maintenance recommendations\n\nAsk me anything about your home services!\n\nFollow-up questions:\n- Which services are overdue?\n- How can I reduce maintenance costs?\n- What's my total service spending?\n- When is my next service due?",
     timestamp: new Date()
   }]);
   const [input, setInput] = React.useState('');
   const [isLoading, setIsLoading] = React.useState(false);
-  const [selectedModel, setSelectedModel] = React.useState(GEMINI_MODELS.FLASH_LITE as GeminiModel);
+  const [selectedModel, setSelectedModel] = React.useState<GeminiModel>(GEMINI_MODELS.FLASH_LITE);
   const [showModelSelector, setShowModelSelector] = React.useState(false);
   const [showSuggestions, setShowSuggestions] = React.useState(false);
-  const messagesEndRef = React.useRef(null as HTMLDivElement | null);
-  const modelSelectorRef = React.useRef(null as HTMLDivElement | null);
 
+  const messagesEndRef = React.useRef<HTMLDivElement>(null);
+  const modelSelectorRef = React.useRef<HTMLDivElement>(null);
+
+  // --- Resize Logic ---
+  React.useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing) return;
+      const newWidth = window.innerWidth - e.clientX;
+      if (newWidth >= 300 && newWidth <= 800) {
+        setWidth(newWidth);
+        if (isOpen) {
+          onOpenChange?.(newWidth);
+        }
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = 'ew-resize';
+      document.body.style.userSelect = 'none';
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing, isOpen, onOpenChange]);
+
+  const toggleChat = (open: boolean) => {
+    setIsOpen(open);
+    onOpenChange?.(open ? width : 0);
+  };
+
+  // Generate context-aware suggestions based on service data
   const getSuggestions = React.useMemo(() => {
     const overdueServices = services.filter(s => new Date(s.next_service_due) < new Date());
     const upcomingServices = services.filter(s => {
@@ -75,6 +119,7 @@ export function ServiceAdvisorChat({ services }: ServiceAdvisorChatProps) {
     scrollToBottom();
   }, [messages]);
 
+  // Click outside to close model selector
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (modelSelectorRef.current && !modelSelectorRef.current.contains(event.target as Node)) {
@@ -88,48 +133,32 @@ export function ServiceAdvisorChat({ services }: ServiceAdvisorChatProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showModelSelector]);
 
+  // Show suggestions when chat is opened and empty
   React.useEffect(() => {
-    if (isOpen && messages.length <= 2 && !input.trim()) {
+    if (isOpen && messages.length <= 1 && !input.trim()) {
       setShowSuggestions(true);
     }
   }, [isOpen, messages.length, input]);
 
-  const getModelDisplayName = (model: GeminiModel): string => {
-    switch (model) {
-      case GEMINI_MODELS.PRO_LATEST:
-        return 'Gemini Pro';
-      case GEMINI_MODELS.FLASH_LATEST:
-        return 'Flash Latest';
-      case GEMINI_MODELS.FLASH_2_0:
-        return 'Flash 2.0';
-      case GEMINI_MODELS.FLASH_LITE:
-        return 'Flash Lite';
-      case GEMINI_MODELS.FLASH_2_5:
-        return 'Flash 2.5';
-      default:
-        return 'Flash Lite';
-    }
-  };
-
-  const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
-
-    setShowSuggestions(false);
+  const handleSend = async (customMessage?: string) => {
+    const messageText = customMessage || input.trim();
+    if (!messageText || isLoading) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: input.trim(),
+      content: messageText,
       timestamp: new Date()
     };
 
     setMessages((prev: Message[]) => [...prev, userMessage]);
     setInput('');
     setIsLoading(true);
+    setShowSuggestions(false);
 
     try {
       const response = await getServiceAdvice(
-        input.trim(),
+        userMessage.content,
         services,
         messages,
         selectedModel
@@ -144,10 +173,11 @@ export function ServiceAdvisorChat({ services }: ServiceAdvisorChatProps) {
 
       setMessages((prev: Message[]) => [...prev, assistantMessage]);
     } catch (error) {
+      console.error('Chat error:', error);
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again with a different question or try another model.`,
+        content: "I'm sorry, I encountered an error. Please try again.",
         timestamp: new Date()
       };
       setMessages((prev: Message[]) => [...prev, errorMessage]);
@@ -156,239 +186,204 @@ export function ServiceAdvisorChat({ services }: ServiceAdvisorChatProps) {
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
+  const getModelDisplayName = (model: GeminiModel): string => {
+    switch (model) {
+      case GEMINI_MODELS.PRO_LATEST: return 'Pro';
+      case GEMINI_MODELS.FLASH_LATEST: return 'Flash';
+      case GEMINI_MODELS.FLASH_2_0: return 'Flash 2.0';
+      case GEMINI_MODELS.FLASH_LITE: return 'Flash Lite';
+      default: return 'Flash Lite';
     }
-  };
-
-  const handleSuggestionClick = (suggestion: string) => {
-    setInput(suggestion);
-    setShowSuggestions(false);
-    setTimeout(() => {
-      handleSend();
-    }, 100);
-  };
-
-  const handleInputFocus = () => {
-    if (!input.trim()) {
-      setShowSuggestions(true);
-    }
-  };
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setInput(e.target.value);
-    if (e.target.value.trim()) {
-      setShowSuggestions(false);
-    }
-  };
-
-  const clearChat = () => {
-    setMessages([{
-      id: '1',
-      role: 'assistant',
-      content: "Hello! 👋 I'm your AI Service Advisor. Ask me anything about your home services!",
-      timestamp: new Date()
-    }]);
-    setShowSuggestions(true);
   };
 
   return (
     <>
-      {isOpen && (
-        <div
-          className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40 transition-opacity duration-300"
-          onClick={() => setIsOpen(false)}
-          aria-label="Close chat"
-        />
-      )}
-
+      {/* Floating Toggle Button */}
       {!isOpen && (
         <button
-          onClick={() => setIsOpen(true)}
-          className="fixed top-1/2 right-0 -translate-y-1/2 p-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg hover:shadow-xl transition-all duration-300 z-50 group rounded-l-xl"
-          aria-label="Open Service Advisor"
-          title="Chat with AI Service Advisor"
+          onClick={() => toggleChat(true)}
+          className="fixed top-1/2 right-0 -translate-y-1/2 p-3 bg-blue-600 text-white rounded-l-xl shadow-lg hover:bg-blue-700 transition-all z-50 group"
+          title="Open Service Advisor"
         >
-          <MessageCircle className="w-6 h-6 group-hover:scale-110 transition-transform" />
-          <span className="absolute top-2 right-2 w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+          <Wrench className="w-6 h-6 group-hover:scale-110 transition-transform" />
         </button>
       )}
 
-      <div
-        className={`fixed top-0 right-0 h-screen bg-white dark:bg-gray-900 shadow-2xl flex flex-col z-50 border-l border-gray-200 dark:border-gray-700 transition-all duration-300 ease-in-out ${isOpen ? 'w-full sm:w-[420px] md:w-[480px] lg:w-[520px] translate-x-0' : 'w-0 translate-x-full'
-          } `}
-      >
-        <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-4 flex items-center justify-between flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
-              <Wrench className="w-6 h-6 text-white" />
+      {/* Sidebar Panel - Rendered via Portal */}
+      {createPortal(
+        <div
+          className={`fixed top-0 right-0 h-screen bg-white dark:bg-gray-900 shadow-2xl z-[9999] flex flex-col border-l border-gray-200 dark:border-gray-700 transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : 'translate-x-full'
+            }`}
+          style={{ width: `${width}px` }}
+        >
+          {/* Resize Handle */}
+          <div
+            onMouseDown={() => setIsResizing(true)}
+            className="absolute left-0 top-0 bottom-0 w-1 cursor-ew-resize hover:bg-blue-500 transition-colors z-50 bg-transparent"
+            title="Drag to resize"
+          />
+
+          {/* Header */}
+          <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+            <div className="flex items-center gap-2">
+              <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                <Wrench className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900 dark:text-white">Service Advisor</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400">AI Copilot</p>
+              </div>
             </div>
-            <div>
-              <h3 className="font-semibold text-white text-lg">Service Advisor</h3>
-              <p className="text-xs text-white/80">AI-powered maintenance help</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="relative" ref={modelSelectorRef}>
+
+            <div className="flex items-center gap-1">
               <button
-                onClick={() => setShowModelSelector(!showModelSelector)}
-                className="p-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors text-white"
-                title="Select AI Model"
+                onClick={() => setMessages([{
+                  id: Date.now().toString(),
+                  role: 'assistant',
+                  content: "Hello! 👋 I'm your AI Service Advisor. I can help you with:\n\n🔧 Service maintenance schedules\n💰 Cost optimization strategies\n⚠️ Overdue service alerts\n📅 Planning upcoming services\n💡 Maintenance recommendations\n\nAsk me anything about your home services!\n\nFollow-up questions:\n- Which services are overdue?\n- How can I reduce maintenance costs?\n- What's my total service spending?\n- When is my next service due?",
+                  timestamp: new Date()
+                }])}
+                className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                title="New Chat"
               >
-                <Settings className="w-5 h-5" />
+                <Plus className="w-4 h-4 text-gray-600 dark:text-gray-400" />
               </button>
 
-              {showModelSelector && (
-                <div className="absolute top-12 right-0 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 py-2 z-10">
-                  <div className="px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
-                    Select AI Model
+              {/* Model Selector */}
+              <div className="relative" ref={modelSelectorRef}>
+                <button
+                  onClick={() => setShowModelSelector(!showModelSelector)}
+                  className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  title="Select Model"
+                >
+                  <Settings className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+                </button>
+
+                {showModelSelector && (
+                  <div className="absolute top-full right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 py-1 z-50">
+                    {Object.values(GEMINI_MODELS).map((model) => (
+                      <button
+                        key={model}
+                        onClick={() => {
+                          setSelectedModel(model);
+                          setShowModelSelector(false);
+                        }}
+                        className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 ${selectedModel === model ? 'text-blue-600 font-medium' : 'text-gray-700 dark:text-gray-300'
+                          }`}
+                      >
+                        {getModelDisplayName(model)}
+                      </button>
+                    ))}
                   </div>
-                  {Object.values(GEMINI_MODELS).map((model) => (
-                    <button
-                      key={model}
-                      onClick={() => {
-                        setSelectedModel(model);
-                        setShowModelSelector(false);
-                      }}
-                      className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors ${selectedModel === model
-                        ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 font-medium'
-                        : 'text-gray-700 dark:text-gray-300'
-                        }`}
-                    >
-                      {getModelDisplayName(model)}
-                      {selectedModel === model && (
-                        <span className="ml-2">✓</span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <button
-              onClick={clearChat}
-              className="p-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors text-white"
-              title="Clear conversation"
-            >
-              <Trash2 className="w-5 h-5" />
-            </button>
-
-            <button
-              onClick={() => setIsOpen(false)}
-              className="p-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors text-white"
-              title="Close chat"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50 dark:bg-gray-800/50">
-          {messages.map((message: Message) => (
-            <div
-              key={message.id}
-              className={`flex gap-3 ${message.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
-            >
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${message.role === 'user'
-                  ? 'bg-gradient-to-br from-blue-500 to-cyan-500'
-                  : 'bg-gradient-to-br from-indigo-500 to-purple-500'
-                }`}>
-                {message.role === 'user' ? (
-                  <User className="w-5 h-5 text-white" />
-                ) : (
-                  <Wrench className="w-5 h-5 text-white" />
                 )}
               </div>
 
-              <div
-                className={`max-w-[75%] rounded-2xl px-4 py-2.5 ${message.role === 'user'
-                    ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white'
-                    : 'bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-700'
-                  }`}
+
+
+              <button
+                onClick={() => toggleChat(false)}
+                className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                title="Close Sidebar"
               >
-                <div className="text-sm prose dark:prose-invert max-w-none prose-sm">
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    components={{
-                      p: ({ node, ...props }: any) => <p className="mb-2 last:mb-0 leading-relaxed" {...props} />,
-                      ul: ({ node, ...props }: any) => <ul className="list-disc pl-5 mb-2" {...props} />,
-                      li: ({ node, ...props }: any) => <li className="pl-1" {...props} />,
-                      strong: ({ node, ...props }: any) => <strong className="font-semibold" {...props} />,
-                    }}
-                  >
-                    {message.content}
-                  </ReactMarkdown>
-                </div>
-                <p className={`text-xs mt-1 ${message.role === 'user' ? 'text-white/70' : 'text-gray-400 dark:text-gray-500'
-                  }`}>
-                  {message.timestamp.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })}
-                </p>
-              </div>
+                <X className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+              </button>
             </div>
-          ))}
-
-          {isLoading && (
-            <div className="flex gap-3">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center flex-shrink-0">
-                <Wrench className="w-5 h-5 text-white" />
-              </div>
-              <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin text-indigo-600" />
-                  <span className="text-sm text-gray-600 dark:text-gray-400">Analyzing...</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div ref={messagesEndRef} />
-        </div>
-
-        <div className="p-4 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 flex-shrink-0">
-          {showSuggestions && !isLoading && (
-            <div className="mb-3 flex flex-wrap gap-2 animate-in fade-in slide-in-from-bottom-2 duration-300">
-              {getSuggestions.map((suggestion: string, index: number) => (
-                <button
-                  key={index}
-                  onClick={() => handleSuggestionClick(suggestion)}
-                  className="px-3 py-1.5 text-xs rounded-full bg-gradient-to-r from-indigo-100 to-purple-100 dark:from-indigo-900/30 dark:to-purple-900/30 text-indigo-700 dark:text-indigo-300 hover:from-indigo-200 hover:to-purple-200 dark:hover:from-indigo-800/40 dark:hover:to-purple-800/40 transition-all hover:scale-105 border border-indigo-200 dark:border-indigo-700"
-                >
-                  💡 {suggestion}
-                </button>
-              ))}
-            </div>
-          )}
-
-          <div className="flex items-center gap-2">
-            <textarea
-              value={input}
-              onChange={handleInputChange}
-              onFocus={handleInputFocus}
-              onKeyPress={handleKeyPress}
-              placeholder="Ask about your services..."
-              className="flex-1 resize-none bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none max-h-24"
-              rows={2}
-              disabled={isLoading}
-            />
-            <button
-              onClick={handleSend}
-              disabled={!input.trim() || isLoading}
-              className="p-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none flex-shrink-0"
-              title="Send message"
-            >
-              <Send className="w-5 h-5" />
-            </button>
           </div>
-          <div className="mt-2 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-            <Sparkles className="w-3 h-3" />
-            <span>Powered by {getModelDisplayName(selectedModel)}</span>
+
+          {/* Messages Area */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {messages.map((msg: Message) => {
+              // Parse follow-up questions from message
+              const parts = msg.content.split(/Follow-up questions?:/i);
+              const mainContent = parts[0].trim();
+              const followUpSection = parts[1];
+              const followUpQuestions = followUpSection ? followUpSection.split('\n').filter((line: string) => line.trim().startsWith('-')).map((line: string) => line.replace(/^-\s*/, '').trim()) : [];
+
+              return (
+                <div key={msg.id} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  {msg.role === 'assistant' && (
+                    <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center flex-shrink-0">
+                      <Bot className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                    </div>
+                  )}
+
+                  <div className={`max-w-[85%] ${msg.role === 'user'
+                    ? 'bg-indigo-600 text-white rounded-2xl px-4 py-3'
+                    : 'space-y-2'
+                    }`}>
+                    {msg.role === 'assistant' ? (
+                      <>
+                        <div className="bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-2xl px-4 py-3">
+                          <div className="prose prose-sm dark:prose-invert max-w-none">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{mainContent}</ReactMarkdown>
+                          </div>
+                        </div>
+                        {followUpQuestions.length > 0 && (
+                          <div className="flex flex-wrap gap-2">
+                            {followUpQuestions.map((question: string, idx: number) => (
+                              <button
+                                key={idx}
+                                onClick={() => handleSend(question)}
+                                className="text-xs px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-full hover:bg-indigo-50 dark:hover:bg-indigo-900/30 hover:border-indigo-300 dark:hover:border-indigo-600 transition-colors text-gray-700 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400"
+                                disabled={isLoading}
+                              >
+                                {question}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="prose prose-sm dark:prose-invert max-w-none">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            {isLoading && (
+              <div className="flex gap-3">
+                <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                  <Bot className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div className="bg-gray-100 dark:bg-gray-800 rounded-2xl px-4 py-3">
+                  <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
           </div>
-        </div>
-      </div>
+
+          {/* Input Area */}
+          <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+
+            <div className="flex gap-2">
+              <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                }}
+                placeholder="Ask about your home services..."
+                className="flex-1 resize-none rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-3 focus:outline-none focus:ring-2 focus:ring-blue-500 max-h-32"
+                rows={1}
+              />
+              <button
+                onClick={() => handleSend()}
+                disabled={!input.trim() || isLoading}
+                className="p-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors self-end"
+              >
+                <Send className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </>
   );
 }
-
-export default ServiceAdvisorChat;

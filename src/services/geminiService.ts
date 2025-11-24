@@ -741,18 +741,20 @@ ${conversationContext ? `CONVERSATION HISTORY:\n${conversationContext}\n` : ''}
 USER QUESTION: ${userQuery}
 
 INSTRUCTIONS:
-1. Provide specific, actionable advice based on their actual transaction data
-2. Be supportive and encouraging, not judgmental
-3. Use specific numbers from their data to make your points
-4. If they ask about savings, suggest specific categories to reduce
-5. If they ask about expenses, identify problematic spending patterns
-6. If they ask what they're doing wrong, highlight areas of concern with data
-7. If they ask what to do next, provide a prioritized action plan
-8. Use emojis appropriately to make the response friendly
-9. CRITICAL: Keep responses VERY SHORT and CONCISE (max 150 words).
-10. Use simple, layman-friendly language. Avoid complex financial jargon.
-11. Use bullet points for readability.
-12. Reference specific categories and amounts when giving advice.
+1. Keep responses VERY SHORT and CRISP (max 100 words, 3-4 bullet points)
+2. Be direct and actionable - give specific advice with numbers
+3. Use simple language - avoid financial jargon
+4. Reference specific categories and amounts from their data
+5. Use emojis sparingly (1-2 max)
+6. End EVERY response with "Follow-up questions:" followed by 3 relevant questions the USER might ask YOU next
+
+FORMAT:
+[Brief answer in 2-3 bullet points]
+
+Follow-up questions:
+- [What user would ask you - e.g., "How can I reduce my grocery spending?"]
+- [What user would ask you - e.g., "What's my biggest expense category?"]
+- [What user would ask you - e.g., "Should I increase my savings?"]
 
 Provide your response now:`;
 
@@ -799,15 +801,25 @@ ${shoppingListItems || "No items in shopping list."}
 USER QUERY: "${userQuery}"
 
 INSTRUCTIONS:
-1. Analyze the user's request (recipe ideas, meal planning, shopping advice, etc.).
-2. If suggesting recipes, prioritize using available inventory.
-3. If the user needs to buy things (e.g., for a recipe or restock), suggest items to add to the shopping list.
-4. Be creative, helpful, and concise.
-5. Format your response as a JSON object.
+1. Keep responses VERY SHORT and CRISP (max 100 words, 3-4 bullet points)
+2. Be direct and actionable - give specific cooking/shopping advice
+3. Use simple language - avoid complex culinary jargon
+4. Analyze the user's request (recipe ideas, meal planning, shopping advice, etc.)
+5. If suggesting recipes, prioritize using available inventory
+6. End EVERY response with "Follow-up questions:" followed by 3 relevant questions the USER might ask YOU next
+7. Format your response as a JSON object
+
+FORMAT FOR RESPONSE TEXT:
+[Brief answer in 2-3 bullet points]
+
+Follow-up questions:
+- [What user would ask you - e.g., "What dessert can I make?"]
+- [What user would ask you - e.g., "How can I use up leftover rice?"]
+- [What user would ask you - e.g., "What's a quick breakfast idea?"]
 
 JSON STRUCTURE:
 {
-  "response": "Your friendly, helpful text response here. Use markdown for formatting (bold, lists).",
+  "response": "Your friendly, helpful text response here with follow-up questions. Use markdown for formatting (bold, lists).",
   "suggestedShoppingItems": [
     { "item_name": "Tomato", "category": "Produce", "quantity": 2, "unit": "pcs" }
   ]
@@ -1088,16 +1100,20 @@ ${conversationContext ? `CONVERSATION HISTORY:\n${conversationContext}\n` : ''}
 USER QUESTION: ${userQuery}
 
 INSTRUCTIONS:
-1. Provide specific, actionable advice based on their actual service data
-2. Be supportive and helpful
-3. Use specific service names and dates from their data
-4. If they ask about cost optimization, suggest specific strategies
-5. If they ask about maintenance schedules, analyze patterns and suggest improvements
-6. If overdue services exist, prioritize them
-7. Suggest preventive maintenance when appropriate
-8. Use emojis appropriately to make responses friendly
-9. Keep responses concise but informative (3-5 paragraphs max)
-10. Reference specific services and costs when giving advice
+1. Keep responses VERY SHORT and CRISP (max 100 words, 3-4 bullet points)
+2. Be direct and actionable - give specific advice with service names and dates
+3. Use simple language
+4. Reference specific services and costs from their data
+5. Use emojis sparingly (1-2 max)
+6. End EVERY response with "Follow-up questions:" followed by 3 relevant questions the USER might ask YOU next
+
+FORMAT:
+[Brief answer in 2-3 bullet points]
+
+Follow-up questions:
+- [What user would ask you - e.g., "Which service should I prioritize?"]
+- [What user would ask you - e.g., "How can I reduce my maintenance costs?"]
+- [What user would ask you - e.g., "When is my next service due?"]
 
 Provide your response now:`;
 

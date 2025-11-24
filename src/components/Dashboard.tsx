@@ -8,7 +8,7 @@ import TransactionList from './TransactionList.tsx';
 import MonthlySummaryTable from './MonthlySummaryTable.tsx';
 import TrendsChart from './TrendsChart.tsx';
 import NaturalLanguageSearch from './NaturalLanguageSearch.tsx';
-import FinancialAdvisorChat from './FinancialAdvisorChat.tsx';
+import { FinancialAdvisorChat } from './FinancialAdvisorChat.tsx';
 import { Upload, CalendarDays, Info, Brain, BarChart3, RefreshCw, AlertTriangle, Settings, ChevronDown, ChevronUp } from 'lucide-react';
 import { useLastUpload, formatLastUpload } from '../hooks/useLastUpload.ts';
 import { generateAIForecast, GEMINI_MODELS, type GeminiModel } from '../services/geminiService.ts';
@@ -61,6 +61,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [filters, setFilters] = React.useState(initialFilters);
   const [aiSearchResults, setAiSearchResults] = React.useState(null as Transaction[] | null);
   const [aiSearchQuery, setAiSearchQuery] = React.useState('');
+  const [chatPanelWidth, setChatPanelWidth] = React.useState(0);
   const [enhancedForecast, setEnhancedForecast] = React.useState(forecast as ForecastResult | undefined);
   const [isGeneratingForecast, setIsGeneratingForecast] = React.useState(false);
   const [forecastError, setForecastError] = React.useState(null as string | null);
@@ -422,7 +423,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     : `Next data upload window opens on ${nextMonthFirst.toLocaleDateString('en-IN', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', timeZone: 'Asia/Kolkata' })}`;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6" style={{ marginRight: `${chatPanelWidth}px`, transition: 'margin-right 0.3s ease-in-out' }}>
       <div className="relative z-20 flex flex-col sm:flex-row justify-between items-center gap-4">
         <h2 className="text-3xl font-bold text-light-text dark:text-dark-text">Financial Overview</h2>
         <div className="flex items-center gap-3">
@@ -535,7 +536,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           </div>
         )}
 
-        <div 
+        <div
           className="flex items-center justify-between mb-2 cursor-pointer p-3 rounded-lg bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 hover:from-indigo-100 hover:to-purple-100 dark:hover:from-indigo-900/30 dark:hover:to-purple-900/30 transition-colors"
           onClick={() => setIsForecastExpanded(!isForecastExpanded)}
         >
@@ -624,7 +625,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               </>
             )}
           </div>
-          
+
           <div className="flex items-center gap-2">
             <span className="text-sm text-gray-600 dark:text-gray-400">
               {isForecastExpanded ? 'Click to minimize' : 'Click to expand'}
@@ -669,8 +670,8 @@ const Dashboard: React.FC<DashboardProps> = ({
       </div>
 
       {/* Financial Advisor Chatbot */}
-      <FinancialAdvisorChat transactions={allTransactions} />
-    </div>
+      <FinancialAdvisorChat transactions={allTransactions} onOpenChange={setChatPanelWidth} />
+    </div >
   );
 };
 

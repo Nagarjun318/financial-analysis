@@ -68,7 +68,8 @@ const AIChart: React.FC<AIChartProps> = ({ transactions, chartType, title, onClo
         </button>
       </div>
 
-      <ResponsiveContainer width="100%" height={400}>
+      <div style={{ width: '100%', height: '400px' }}>
+        <ResponsiveContainer width="100%" height={400}>
         {chartType === 'bar' && (
           <BarChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.1} />
@@ -142,7 +143,8 @@ const AIChart: React.FC<AIChartProps> = ({ transactions, chartType, title, onClo
             />
           </LineChart>
         )}
-      </ResponsiveContainer>
+        </ResponsiveContainer>
+      </div>
 
       <div className="mt-4 text-sm text-gray-600 dark:text-gray-400">
         <p>Based on {transactions.length} transaction{transactions.length !== 1 ? 's' : ''}</p>

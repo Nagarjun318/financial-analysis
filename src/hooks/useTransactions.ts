@@ -38,6 +38,8 @@ const mapRowToTransaction = (r: TransactionRow): Transaction => {
 
 export const TRANSACTIONS_QUERY_KEY = ['transactions'];
 
+const EMPTY_ARRAY: Transaction[] = [];
+
 export function useTransactions(userId: string | undefined) {
   const queryClient = useQueryClient();
 
@@ -124,7 +126,7 @@ export function useTransactions(userId: string | undefined) {
   });
 
   return {
-    transactions: transactionsQuery.data || [],
+    transactions: transactionsQuery.data || EMPTY_ARRAY,
     isLoading: transactionsQuery.isLoading,
     isError: transactionsQuery.isError,
     refetch: transactionsQuery.refetch,

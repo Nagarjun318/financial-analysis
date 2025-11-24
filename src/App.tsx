@@ -2,12 +2,14 @@ import React from 'react';
 import { supabase, isSupabaseConfigured } from './services/supabaseClient';
 import SetupInstructions from './components/SetupInstructions.tsx';
 import { Session } from '@supabase/supabase-js';
-import Navbar from './components/Navbar.tsx';
+import Sidebar from './components/Sidebar.tsx';
 import HomePage from './components/HomePage.tsx';
 import AboutPage from './components/AboutPage.tsx';
 import ServicesPage from './components/ServicesPage.tsx';
 import InvestmentPage from './components/InvestmentPage.tsx';
 import GroceriesPage from './components/GroceriesPage.tsx';
+import NetWorthPage from './components/NetWorthPage.tsx';
+import GoalsPage from './components/GoalsPage.tsx';
 import Auth from './components/Auth';
 import Dashboard from './components/Dashboard';
 import StagingModal from './components/StagingModal';
@@ -29,6 +31,7 @@ const App: React.FC = () => {
   const [loading, setLoading] = React.useState(true);
   const [isUploading, setIsUploading] = React.useState(false);
   const [error, setError] = React.useState(null as string | null);
+  const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
 
   // Staging transactions from file upload
   const [stagedTransactions, setStagedTransactions] = React.useState([] as Transaction[]);
@@ -231,67 +234,84 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-light-bg dark:bg-dark-bg text-light-text dark:text-dark-text font-sans">
-      <Navbar
+      <Sidebar
         currentSection={currentSection}
         onSectionChange={setCurrentSection}
         userEmail={session.user?.email}
         onSignOut={handleSignOut}
-      />
-      <main className="container mx-auto p-4 sm:p-6 lg:p-8">
-        {loading ? (
-          <div className="flex justify-center items-center h-[60vh]">
-            <p className="text-lg font-medium text-gray-600 dark:text-gray-300 animate-pulse">Loading transactions...</p>
-          </div>
-        ) : (
-          <>
-            <div className="container mx-auto px-4 py-8">
-              {currentSection === 'home' && <HomePage />}
-              {currentSection === 'about' && <AboutPage />}
-              {currentSection === 'services' && <ServicesPage />}
-              {currentSection === 'finance' && (
-                <Dashboard
-                  analysisResult={analysisResult}
-                  onFileUpload={handleFileUpload}
-                  isUploading={isUploading}
-                  onEditTransaction={handleEditTransaction}
-                  onDeleteTransaction={handleDeleteTransaction}
-                  onRefreshData={refetch}
-                  userId={session.user.id}
-                />
-              )}
-              {currentSection === 'investment' && <InvestmentPage />}
-              {currentSection === 'groceries' && <GroceriesPage userId={session.user.id} />}
-            </div>
-          </>
-        )}
-        {error &&
-          <div className="fixed bottom-4 right-4 bg-red-500 text-white p-4 rounded-lg shadow-lg z-50">
-            <div className="flex items-center justify-between">
-              <p className="font-semibold pr-4">{error}</p>
-              <button onClick={() => setError(null)} className="text-xl font-bold leading-none">&times;</button>
-            </div>
-          </div>
-        }
-      </main>
-
-      <StagingModal
-        isOpen={isStagingModalOpen}
-        onClose={() => setIsStagingModalOpen(false)}
-        transactions={stagedTransactions}
-        onConfirm={handleConfirmStagedTransactions}
-        onTransactionsUpdate={setStagedTransactions}
-        fileName={stagedFileName}
-        isConfirming={isConfirming}
+        isOpen={isSidebarOpen}
+        onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
       />
 
-      {editingTransaction && (
-        <EditTransactionModal
-          isOpen={isEditModalOpen}
-          onClose={() => setIsEditModalOpen(false)}
-          transaction={editingTransaction}
-          onConfirm={handleConfirmEdit}
+      <div className={`transition-all duration-300 ease-in-out ${isSidebarOpen ? 'md:ml-64' : 'md:ml-20'}`}>
+        <main className="container mx-auto p-4 sm:p-6 lg:p-8">
+          {loading ? (
+            <div className="flex justify-center items-center h-[60vh]">
+              <p className="text-lg font-medium text-gray-600 dark:text-gray-300 animate-pulse">Loading transactions...</p>
+            </div>
+          ) : (
+            <>
+              <div className="container mx-auto px-4 py-8">
+                {currentSection === 'home' && <HomePage />}
+                {currentSection === 'about' && <AboutPage />}
+                {currentSection === 'services' && <ServicesPage />}
+                {currentSection === 'finance' && (
+                  <Dashboard
+                    analysisResult={analysisResult}
+                    onFileUpload={handleFileUpload}
+                    isUploading={isUploading}
+                    onEditTransaction={handleEditTransaction}
+                    onDeleteTransaction={handleDeleteTransaction}
+                    onRefreshData={refetch}
+                    userId={session.user.id}
+                  />
+                )}
+                {currentSection === 'investment' && <InvestmentPage />}
+                {currentSection === 'groceries' && <GroceriesPage userId={session.user.id} />}
+                {currentSection === 'networth' && (
+                  <NetWorthPage
+                    transactions={analysisResult.transactions}
+                    userId={session.user.id}
+                  />
+                )}
+                {currentSection === 'goals' && (
+                  <GoalsPage
+                    userId={session.user.id}
+                    transactions={analysisResult.transactions}
+                  />
+                )}
+              </div>
+            </>
+          )}
+          {error &&
+            <div className="fixed bottom-4 right-4 bg-red-500 text-white p-4 rounded-lg shadow-lg z-50">
+              <div className="flex items-center justify-between">
+                <p className="font-semibold pr-4">{error}</p>
+                <button onClick={() => setError(null)} className="text-xl font-bold leading-none">&times;</button>
+              </div>
+            </div>
+          }
+        </main>
+
+        <StagingModal
+          isOpen={isStagingModalOpen}
+          onClose={() => setIsStagingModalOpen(false)}
+          transactions={stagedTransactions}
+          onConfirm={handleConfirmStagedTransactions}
+          onTransactionsUpdate={setStagedTransactions}
+          fileName={stagedFileName}
+          isConfirming={isConfirming}
         />
-      )}
+
+        {editingTransaction && (
+          <EditTransactionModal
+            isOpen={isEditModalOpen}
+            onClose={() => setIsEditModalOpen(false)}
+            transaction={editingTransaction}
+            onConfirm={handleConfirmEdit}
+          />
+        )}
+      </div>
     </div>
   );
 };

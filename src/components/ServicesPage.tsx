@@ -9,6 +9,7 @@ import { ServiceHistoryModal } from './ServiceHistoryModal';
 import { detectServiceTypeAndSuggest } from '../services/geminiService';
 
 const ServicesPage: React.FC = () => {
+  const [chatPanelWidth, setChatPanelWidth] = React.useState(0);
   const [session, setSession] = React.useState(null as any);
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [editingService, setEditingService] = React.useState(null as HomeService | null);
@@ -220,7 +221,7 @@ const ServicesPage: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" style={{ marginRight: `${chatPanelWidth}px`, transition: 'margin-right 0.3s ease-in-out' }}>
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
@@ -638,7 +639,7 @@ const ServicesPage: React.FC = () => {
       )}
 
       {/* Service Advisor Chatbot */}
-      <ServiceAdvisorChat services={services} />
+      <ServiceAdvisorChat services={services} onOpenChange={setChatPanelWidth} />
 
       {/* Service History Modal */}
       {historyModalService && (

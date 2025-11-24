@@ -1,9 +1,9 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { MessageCircle, Send, Sparkles, X, Settings, Loader2, Bot, User, Target, Plus } from 'lucide-react';
-import { Transaction } from '../types';
+import { MessageCircle, Send, Sparkles, X, Settings, Loader2, Bot, User, Wallet, Plus } from 'lucide-react';
+import { chatAboutNetWorth } from '../services/netWorthAI';
+import { Asset, Liability, NetWorthSnapshot } from '../domain/networth/calculateNetWorth';
 import { GEMINI_MODELS, GeminiModel } from '../services/geminiService';
-import { getFinancialAdvice } from '../services/geminiService';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -14,12 +14,14 @@ interface Message {
   timestamp: Date;
 }
 
-interface FinancialAdvisorChatProps {
-  transactions: Transaction[];
+interface NetWorthAdvisorChatProps {
+  assets: Asset[];
+  liabilities: Liability[];
+  timeline: NetWorthSnapshot[];
   onOpenChange?: (width: number) => void;
 }
 
-export function FinancialAdvisorChat({ transactions, onOpenChange }: FinancialAdvisorChatProps) {
+export function NetWorthAdvisorChat({ assets, liabilities, timeline, onOpenChange }: NetWorthAdvisorChatProps) {
   const [isOpen, setIsOpen] = React.useState(false);
   const [width, setWidth] = React.useState(450);
   const [isResizing, setIsResizing] = React.useState(false);
@@ -27,7 +29,7 @@ export function FinancialAdvisorChat({ transactions, onOpenChange }: FinancialAd
   const [messages, setMessages] = React.useState<Message[]>([{
     id: '1',
     role: 'assistant',
-    content: "Hello! 👋 I'm your AI Financial Advisor. I can help you with:\n\n💰 Increasing your savings\n📉 Reducing expenses\n📊 Analyzing spending patterns\n💡 Providing personalized financial advice\n🎯 Setting financial goals\n⚠️ Identifying spending issues\n\nAsk me anything about your finances!\n\nFollow-up questions:\n- What's my biggest expense category?\n- How can I increase my savings?\n- Am I spending too much on anything?\n- What's my savings rate?",
+    content: "Hello! 👋 I'm your AI Net Worth Advisor. I can help you with:\n\n💎 Asset management strategies\n📉 Debt reduction planning\n📊 Net worth growth analysis\n💡 Investment recommendations\n🎯 Financial goal setting\n⚠️ Portfolio risk assessment\n\nAsk me anything about your net worth, assets, or liabilities!\n\nFollow-up questions:\n- What's my current financial health?\n- How can I grow my net worth faster?\n- Should I pay off debt or invest?\n- What assets should I add?",
     timestamp: new Date()
   }]);
   const [input, setInput] = React.useState('');
@@ -76,52 +78,46 @@ export function FinancialAdvisorChat({ transactions, onOpenChange }: FinancialAd
     onOpenChange?.(open ? width : 0);
   };
 
-  // Generate context-aware suggestions based on transaction data
+  // Generate context-aware suggestions based on net worth data
   const getSuggestions = React.useMemo(() => {
-    const totalIncome = transactions.filter(t => t.type === 'credit').reduce((sum, t) => sum + Math.abs(t.amount), 0);
-    const totalExpenses = transactions.filter(t => t.type === 'debit').reduce((sum, t) => sum + Math.abs(t.amount), 0);
-    const savingsRate = totalIncome > 0 ? ((totalIncome - totalExpenses) / totalIncome) * 100 : 0;
-
-    // Get top expense categories
-    const categoryExpenses = transactions
-      .filter(t => t.type === 'debit')
-      .reduce((acc, t) => {
-        const cat = t.category || 'Other';
-        acc[cat] = (acc[cat] || 0) + Math.abs(t.amount);
-        return acc;
-      }, {} as Record<string, number>);
-
-    const topCategory = Object.entries(categoryExpenses)
-      .sort(([, a], [, b]) => b - a)[0];
+    const totalAssets = assets.reduce((sum, a) => sum + a.currentValue, 0);
+    const totalLiabilities = liabilities
+      .filter(l => !l.name.includes('(Completed)'))
+      .reduce((sum, l) => sum + (l.principal || 0), 0);
+    const netWorth = totalAssets - totalLiabilities;
+    const debtRatio = totalAssets > 0 ? (totalLiabilities / totalAssets) * 100 : 0;
 
     const suggestions: string[] = [];
 
     // Base suggestions
     if (messages.length <= 2) {
       suggestions.push(
-        "How can I increase my savings?",
-        "Analyze my spending patterns",
-        "What am I spending too much on?",
-        "Give me a financial health summary"
+        "What's my current financial health?",
+        "How can I grow my net worth?",
+        "Should I pay off debt or invest?",
+        "Analyze my asset allocation"
       );
     } else {
-      // Context-aware suggestions based on data
-      if (savingsRate < 20) {
-        suggestions.push("How can I save more money?");
+      // Context-aware suggestions
+      if (debtRatio > 50) {
+        suggestions.push("How can I reduce my debt faster?");
       }
-      if (topCategory) {
-        suggestions.push(`Why is my ${topCategory[0]} spending high?`);
+      if (assets.length < 3) {
+        suggestions.push("Should I diversify my assets?");
+      }
+      if (netWorth > 0) {
+        suggestions.push("What's the best way to grow my net worth?");
       }
       suggestions.push(
-        "What should I do to improve my finances?",
-        "Give me tips to reduce expenses",
-        "Am I making any financial mistakes?",
-        "What are my biggest spending categories?"
+        "Give me personalized investment advice",
+        "What are my biggest financial risks?",
+        "How am I doing compared to others?",
+        "What should be my next financial move?"
       );
     }
 
-    return suggestions.slice(0, 4); // Return top 4 suggestions
-  }, [transactions, messages.length]);
+    return suggestions.slice(0, 4);
+  }, [assets, liabilities, messages.length]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -169,10 +165,11 @@ export function FinancialAdvisorChat({ transactions, onOpenChange }: FinancialAd
     setShowSuggestions(false);
 
     try {
-      const response = await getFinancialAdvice(
+      const response = await chatAboutNetWorth(
         userMessage.content,
-        transactions,
-        messages,
+        assets,
+        liabilities,
+        timeline,
         selectedModel
       );
 
@@ -214,10 +211,10 @@ export function FinancialAdvisorChat({ transactions, onOpenChange }: FinancialAd
       {!isOpen && (
         <button
           onClick={() => toggleChat(true)}
-          className="fixed top-1/2 right-0 -translate-y-1/2 p-3 bg-indigo-600 text-white rounded-l-xl shadow-lg hover:bg-indigo-700 transition-all z-50 group"
-          title="Open Financial Advisor"
+          className="fixed top-1/2 right-0 -translate-y-1/2 p-3 bg-emerald-600 text-white rounded-l-xl shadow-lg hover:bg-emerald-700 transition-all z-50 group"
+          title="Open Net Worth Advisor"
         >
-          <Bot className="w-6 h-6 group-hover:scale-110 transition-transform" />
+          <Wallet className="w-6 h-6 group-hover:scale-110 transition-transform" />
         </button>
       )}
 
@@ -231,18 +228,18 @@ export function FinancialAdvisorChat({ transactions, onOpenChange }: FinancialAd
           {/* Resize Handle */}
           <div
             onMouseDown={() => setIsResizing(true)}
-            className="absolute left-0 top-0 bottom-0 w-1 cursor-ew-resize hover:bg-indigo-500 transition-colors z-50 bg-transparent"
+            className="absolute left-0 top-0 bottom-0 w-1 cursor-ew-resize hover:bg-emerald-500 transition-colors z-50 bg-transparent"
             title="Drag to resize"
           />
 
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
             <div className="flex items-center gap-2">
-              <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg">
-                <Bot className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+              <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg">
+                <Wallet className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
               </div>
               <div>
-                <h3 className="font-semibold text-gray-900 dark:text-white">Financial Advisor</h3>
+                <h3 className="font-semibold text-gray-900 dark:text-white">Net Worth Advisor</h3>
                 <p className="text-xs text-gray-500 dark:text-gray-400">AI Copilot</p>
               </div>
             </div>
@@ -252,7 +249,7 @@ export function FinancialAdvisorChat({ transactions, onOpenChange }: FinancialAd
                 onClick={() => setMessages([{
                   id: Date.now().toString(),
                   role: 'assistant',
-                  content: "Hello! 👋 I'm your AI Financial Advisor. I can help you with:\n\n💰 Increasing your savings\n📉 Reducing expenses\n📊 Analyzing spending patterns\n💡 Providing personalized financial advice\n🎯 Setting financial goals\n⚠️ Identifying spending issues\n\nAsk me anything about your finances!\n\nFollow-up questions:\n- What's my biggest expense category?\n- How can I increase my savings?\n- Am I spending too much on anything?\n- What's my savings rate?",
+                  content: "Hello! 👋 I'm your AI Net Worth Advisor. I can help you with:\n\n💎 Asset management strategies\n📉 Debt reduction planning\n📊 Net worth growth analysis\n💡 Investment recommendations\n🎯 Financial goal setting\n⚠️ Portfolio risk assessment\n\nAsk me anything about your net worth, assets, or liabilities!\n\nFollow-up questions:\n- What's my current financial health?\n- How can I grow my net worth faster?\n- Should I pay off debt or invest?\n- What assets should I add?",
                   timestamp: new Date()
                 }])}
                 className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
@@ -280,7 +277,7 @@ export function FinancialAdvisorChat({ transactions, onOpenChange }: FinancialAd
                           setSelectedModel(model);
                           setShowModelSelector(false);
                         }}
-                        className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 ${selectedModel === model ? 'text-indigo-600 font-medium' : 'text-gray-700 dark:text-gray-300'
+                        className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 ${selectedModel === model ? 'text-emerald-600 font-medium' : 'text-gray-700 dark:text-gray-300'
                           }`}
                       >
                         {getModelDisplayName(model)}
@@ -356,11 +353,11 @@ export function FinancialAdvisorChat({ transactions, onOpenChange }: FinancialAd
             })}
             {isLoading && (
               <div className="flex gap-3">
-                <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center">
-                  <Bot className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+                  <Bot className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                 </div>
                 <div className="bg-gray-100 dark:bg-gray-800 rounded-2xl px-4 py-3">
-                  <Loader2 className="w-4 h-4 animate-spin text-indigo-600" />
+                  <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
                 </div>
               </div>
             )}
@@ -380,14 +377,14 @@ export function FinancialAdvisorChat({ transactions, onOpenChange }: FinancialAd
                     handleSend();
                   }
                 }}
-                placeholder="Ask about your finances..."
-                className="flex-1 resize-none rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 max-h-32"
+                placeholder="Ask about your net worth..."
+                className="flex-1 resize-none rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-3 focus:outline-none focus:ring-2 focus:ring-emerald-500 max-h-32"
                 rows={1}
               />
               <button
                 onClick={() => handleSend()}
                 disabled={!input.trim() || isLoading}
-                className="p-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors self-end"
+                className="p-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors self-end"
               >
                 <Send className="w-5 h-5" />
               </button>

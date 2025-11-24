@@ -352,9 +352,9 @@ const InvestmentPage: React.FC = () => {
             <PieChart className="w-5 h-5 text-brand-primary" />
             Asset Allocation
           </h3>
-          <div className="flex-grow min-h-[300px]">
+          <div className="flex-grow" style={{ minHeight: '300px', height: '300px' }}>
             {investments.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height={300}>
                 <RePieChart>
                   <Pie
                     data={allocationData}
