@@ -100,8 +100,8 @@ export const AIForecastChart: React.FC<Props> = ({ timeline, liabilities }) => {
 
   return (
     <div className="glass-panel p-6 rounded-xl">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
           <TrendingUp className="h-5 w-5 text-purple-600 dark:text-purple-400" />
           <h3 className="text-lg font-semibold">AI Net Worth Forecast</h3>
           {isUsingCache && (
@@ -110,11 +110,11 @@ export const AIForecastChart: React.FC<Props> = ({ timeline, liabilities }) => {
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
           <select
             value={selectedModel}
             onChange={e => setSelectedModel(e.target.value as GeminiModel)}
-            className="text-sm px-3 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg"
+            className="text-sm px-3 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg flex-1 sm:flex-none"
           >
             <option value={GEMINI_MODELS.FLASH_LITE}>Flash Lite</option>
             <option value={GEMINI_MODELS.FLASH_LATEST}>Flash Latest</option>
@@ -123,7 +123,7 @@ export const AIForecastChart: React.FC<Props> = ({ timeline, liabilities }) => {
           <select
             value={monthsAhead}
             onChange={e => setMonthsAhead(Number(e.target.value))}
-            className="text-sm px-3 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg"
+            className="text-sm px-3 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg flex-1 sm:flex-none"
           >
             <option value={6}>6 months</option>
             <option value={12}>12 months</option>
@@ -132,7 +132,7 @@ export const AIForecastChart: React.FC<Props> = ({ timeline, liabilities }) => {
           <button
             onClick={() => generateForecast(true)}
             disabled={isLoading}
-            className="text-sm px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors disabled:opacity-50"
+            className="text-sm px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors disabled:opacity-50 flex-1 sm:flex-none"
           >
             {isLoading ? 'Generating...' : 'Refresh'}
           </button>
@@ -147,15 +147,15 @@ export const AIForecastChart: React.FC<Props> = ({ timeline, liabilities }) => {
       ) : forecast ? (
         <div className="space-y-6">
           {/* Chart */}
-          <div className="relative h-64 bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-purple-900/20 dark:to-indigo-900/20 rounded-lg p-4">
-            <div className="flex h-full gap-1">
+          <div className="relative h-64 md:h-64 sm:h-80 bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-purple-900/20 dark:to-indigo-900/20 rounded-lg p-4 overflow-x-auto">
+            <div className="flex h-full gap-1 min-w-full">
               {forecast.periods.map((period: any, idx: number) => {
                 const netWorthHeight = (period.predictedNetWorth / maxValue) * 100;
                 const assetsHeight = (period.predictedAssets / maxValue) * 100;
                 const liabilitiesHeight = (period.predictedLiabilities / maxValue) * 100;
 
                 return (
-                  <div key={idx} className="flex-1 flex flex-col justify-end group relative">
+                  <div key={idx} className="flex-1 flex flex-col justify-end group relative min-w-[40px]">
                     <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block z-10">
                       <div className="bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-xs rounded-lg p-2 whitespace-nowrap">
                         <div className="font-medium mb-1">
@@ -184,14 +184,17 @@ export const AIForecastChart: React.FC<Props> = ({ timeline, liabilities }) => {
                       className="bg-gradient-to-t from-purple-600 to-purple-400 rounded-t transition-all hover:opacity-80"
                       style={{ height: `${netWorthHeight}%` }}
                     />
-                    <div className="text-xs text-center mt-1 text-gray-600 dark:text-gray-400 truncate">
+                    <div className="text-[10px] md:text-xs text-center mt-1 text-gray-600 dark:text-gray-400 transform md:rotate-0 -rotate-45 origin-top-left whitespace-nowrap md:whitespace-normal overflow-visible">
                       {(() => {
                         try {
                           // Handle YYYY-MM format safely without timezone issues
                           if (/^\d{4}-\d{2}$/.test(period.month)) {
                             const [year, month] = period.month.split('-').map(Number);
                             const date = new Date(year, month - 1);
-                            return date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+                            // On mobile, show just month abbreviation
+                            return window.innerWidth < 768
+                              ? date.toLocaleDateString('en-US', { month: 'short' })
+                              : date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
                           }
                           // Fallback for other formats
                           return period.month.split(' ')[0].slice(0, 3);

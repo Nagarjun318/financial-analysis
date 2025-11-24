@@ -51,6 +51,17 @@ const Sidebar: React.FC<SidebarProps> = ({ currentSection, onSectionChange, user
                 />
             )}
 
+            {/* Mobile Toggle Button */}
+            {!isOpen && (
+                <button
+                    onClick={onToggle}
+                    className="fixed top-4 left-4 p-2 bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 z-50 md:hidden hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                    aria-label="Open Sidebar"
+                >
+                    <Menu className="w-6 h-6" />
+                </button>
+            )}
+
             {/* Sidebar Container */}
             <aside
                 className={`fixed top-0 left-0 h-screen bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 z-50 transition-all duration-300 ease-in-out flex flex-col ${isOpen ? 'w-64 translate-x-0' : 'w-20 -translate-x-full md:translate-x-0'
@@ -89,8 +100,8 @@ const Sidebar: React.FC<SidebarProps> = ({ currentSection, onSectionChange, user
                                             key={item.id}
                                             onClick={() => onSectionChange(item.id)}
                                             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group ${isActive
-                                                    ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400'
-                                                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
+                                                ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400'
+                                                : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
                                                 }`}
                                             title={!isOpen ? item.label : undefined}
                                         >

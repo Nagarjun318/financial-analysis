@@ -21,7 +21,12 @@ interface FinancialAdvisorChatProps {
 
 export function FinancialAdvisorChat({ transactions, onOpenChange }: FinancialAdvisorChatProps) {
   const [isOpen, setIsOpen] = React.useState(false);
-  const [width, setWidth] = React.useState(450);
+  const [width, setWidth] = React.useState(() => {
+    if (typeof window !== 'undefined') {
+      return Math.min(450, window.innerWidth);
+    }
+    return 450;
+  });
   const [isResizing, setIsResizing] = React.useState(false);
 
   const [messages, setMessages] = React.useState<Message[]>([{
@@ -47,7 +52,8 @@ export function FinancialAdvisorChat({ transactions, onOpenChange }: FinancialAd
       if (newWidth >= 300 && newWidth <= 800) {
         setWidth(newWidth);
         if (isOpen) {
-          onOpenChange?.(newWidth);
+          const isMobile = window.innerWidth < 768;
+          onOpenChange?.(isMobile ? 0 : newWidth);
         }
       }
     };
@@ -73,7 +79,8 @@ export function FinancialAdvisorChat({ transactions, onOpenChange }: FinancialAd
 
   const toggleChat = (open: boolean) => {
     setIsOpen(open);
-    onOpenChange?.(open ? width : 0);
+    const isMobile = window.innerWidth < 768;
+    onOpenChange?.(open && !isMobile ? width : 0);
   };
 
   // Generate context-aware suggestions based on transaction data

@@ -25,7 +25,12 @@ interface GoalsAdvisorChatProps {
 export function GoalsAdvisorChat({ goals, netWorth, monthlyIncome, monthlyExpenses, onOpenChange }: GoalsAdvisorChatProps) {
     // --- State ---
     const [isOpen, setIsOpen] = React.useState(false);
-    const [width, setWidth] = React.useState(450); // Default width
+    const [width, setWidth] = React.useState(() => {
+        if (typeof window !== 'undefined') {
+            return Math.min(450, window.innerWidth);
+        }
+        return 450;
+    }); // Default width
     const [isResizing, setIsResizing] = React.useState(false);
 
     // Chat State
@@ -57,7 +62,8 @@ export function GoalsAdvisorChat({ goals, netWorth, monthlyIncome, monthlyExpens
             if (newWidth >= 300 && newWidth <= 800) {
                 setWidth(newWidth);
                 if (isOpen) {
-                    onOpenChange?.(newWidth);
+                    const isMobile = window.innerWidth < 768;
+                    onOpenChange?.(isMobile ? 0 : newWidth);
                 }
             }
         };
@@ -84,7 +90,8 @@ export function GoalsAdvisorChat({ goals, netWorth, monthlyIncome, monthlyExpens
     // --- Toggle Logic ---
     const toggleChat = (open: boolean) => {
         setIsOpen(open);
-        onOpenChange?.(open ? width : 0);
+        const isMobile = window.innerWidth < 768;
+        onOpenChange?.(open && !isMobile ? width : 0);
     };
 
     // --- Chat Logic ---

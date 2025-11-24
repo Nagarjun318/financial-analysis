@@ -152,21 +152,21 @@ const GoalsPage: React.FC<GoalsPageProps> = ({ userId, transactions }) => {
     return (
         <div
             className="space-y-8 pb-20 animate-fadeIn transition-all duration-300"
-            style={{ marginRight: chatPanelWidth > 0 ? `${chatPanelWidth}px` : '0px' }}
+            style={{ marginRight: window.innerWidth >= 768 && chatPanelWidth > 0 ? `${chatPanelWidth}px` : '0px' }}
         >
-            <div className="flex justify-between items-center">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
-                    <h2 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-                        <Target className="w-8 h-8 text-brand-primary" />
+                    <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
+                        <Target className="w-6 h-6 sm:w-8 sm:h-8 text-brand-primary" />
                         Financial Goals
                     </h2>
-                    <p className="text-gray-600 dark:text-gray-400 mt-1">Plan and track your financial milestones with AI guidance</p>
+                    <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400 mt-1">Plan and track your financial milestones with AI guidance</p>
                 </div>
-                <div className="flex gap-3">
+                <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
                     <button
                         onClick={loadSuggestions}
                         disabled={isLoadingSuggestions}
-                        className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors shadow-lg shadow-purple-600/20 disabled:opacity-50"
+                        className="flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors shadow-lg shadow-purple-600/20 disabled:opacity-50 w-full sm:w-auto"
                     >
                         {isLoadingSuggestions ? (
                             <Loader2 className="w-5 h-5 animate-spin" />
@@ -177,7 +177,7 @@ const GoalsPage: React.FC<GoalsPageProps> = ({ userId, transactions }) => {
                     </button>
                     <button
                         onClick={() => { setIsAdding(true); setEditingId(null); setFormData({ name: '', target_amount: 0, current_amount: 0, deadline: '', category: 'purchase', priority: 'medium' }); }}
-                        className="flex items-center gap-2 px-4 py-2 bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition-colors shadow-lg shadow-brand-primary/20"
+                        className="flex items-center justify-center gap-2 px-4 py-2 bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition-colors shadow-lg shadow-brand-primary/20 w-full sm:w-auto"
                     >
                         <Plus className="w-5 h-5" />
                         Add New Goal
@@ -228,7 +228,7 @@ const GoalsPage: React.FC<GoalsPageProps> = ({ userId, transactions }) => {
             {/* Add/Edit Modal */}
             {isAdding && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-gray-200 dark:border-gray-700 animate-scaleIn">
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto border border-gray-200 dark:border-gray-700 animate-scaleIn">
                         <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-800/50">
                             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                                 {editingId ? 'Edit Goal' : 'New Financial Goal'}
