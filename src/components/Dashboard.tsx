@@ -9,7 +9,7 @@ import MonthlySummaryTable from './MonthlySummaryTable.tsx';
 import TrendsChart from './TrendsChart.tsx';
 import NaturalLanguageSearch from './NaturalLanguageSearch.tsx';
 import { FinancialAdvisorChat } from './FinancialAdvisorChat.tsx';
-import { Upload, CalendarDays, Info, Brain, BarChart3, RefreshCw, AlertTriangle, Settings, ChevronDown, ChevronUp } from 'lucide-react';
+import { Upload, CalendarDays, Info, Brain, BarChart3, RefreshCw, AlertTriangle, Settings, ChevronDown, ChevronUp, User } from 'lucide-react';
 import { useLastUpload, formatLastUpload } from '../hooks/useLastUpload.ts';
 import { generateAIForecast, GEMINI_MODELS, type GeminiModel } from '../services/geminiService.ts';
 import { buildForecast } from '../domain/analytics/forecast.ts';
@@ -22,6 +22,7 @@ interface DashboardProps {
   onDeleteTransaction: (transactionId: number) => Promise<void>;
   onRefreshData: () => void; // Callback to refresh transaction data
   userId: string; // current authenticated user id for budgets
+  isLoggedIn: boolean; // whether user is authenticated
 }
 
 export interface TransactionFilters {
@@ -54,6 +55,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   onDeleteTransaction,
   onRefreshData,
   userId,
+  isLoggedIn,
 }) => {
   const { summary, transactions: allTransactions, forecast, anomalies } = analysisResult;
   // Local UI state hooks first for stable ordering
@@ -421,6 +423,29 @@ const Dashboard: React.FC<DashboardProps> = ({
   const tooltip = daysLeft === 0
     ? 'Monthly data upload window is open (1st of month).'
     : `Next data upload window opens on ${nextMonthFirst.toLocaleDateString('en-IN', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', timeZone: 'Asia/Kolkata' })}`;
+
+  // Show login prompt if user is not logged in
+  if (!isLoggedIn) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="glass-panel p-8 rounded-xl text-center max-w-md">
+          <div className="w-16 h-16 bg-indigo-100 dark:bg-indigo-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+            <User className="w-8 h-8 text-indigo-600 dark:text-indigo-400" />
+          </div>
+          <h3 className="text-xl font-semibold text-light-text dark:text-dark-text mb-2">Login Required</h3>
+          <p className="text-light-text-secondary dark:text-dark-text-secondary mb-6">
+            Please log in to view your financial data and upload transactions.
+          </p>
+          <button
+            onClick={() => window.location.hash = '#auth'}
+            className="px-6 py-2 bg-brand-primary text-white rounded-lg hover:opacity-90 transition-all"
+          >
+            Go to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6" style={{ marginRight: `${chatPanelWidth}px`, transition: 'margin-right 0.3s ease-in-out' }}>

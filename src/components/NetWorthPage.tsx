@@ -4,6 +4,7 @@ import { Transaction } from '../types';
 import { Wallet, TrendingUp, TrendingDown, Calendar, Percent, DollarSign, Plus, Trash2 } from 'lucide-react';
 import { useAssets } from '../hooks/useAssets';
 import { useLiabilities } from '../hooks/useLiabilities';
+import { useInvestments } from '../hooks/useInvestments';
 import { AIInsightsPanel } from './AIInsightsPanel';
 import { AIForecastChart } from './AIForecastChart';
 
@@ -24,6 +25,7 @@ export const NetWorthPage: React.FC<Props> = ({
   // Fetch from database
   const { assets, isLoading: assetsLoading, insertAsset, updateAsset, deleteAsset } = useAssets(userId);
   const { liabilities, isLoading: liabilitiesLoading, insertLiability, updateLiability, deleteLiability } = useLiabilities(userId);
+  const { investments, isLoading: investmentsLoading } = useInvestments(userId);
 
   // Modal State
   const [chatPanelWidth, setChatPanelWidth] = React.useState(0);
@@ -31,7 +33,7 @@ export const NetWorthPage: React.FC<Props> = ({
   const [modalType, setModalType] = React.useState('asset' as 'asset' | 'liability');
   const [modalData, setModalData] = React.useState<any>(null);
 
-  const isLoading = assetsLoading || liabilitiesLoading;
+  const isLoading = assetsLoading || liabilitiesLoading || investmentsLoading;
 
   const enrichedLiabilities = React.useMemo(() => deriveLiabilities(
     transactions.map(t => ({ date: t.date, description: t.description, amount: t.amount, type: t.type, category: t.category })),
@@ -41,8 +43,9 @@ export const NetWorthPage: React.FC<Props> = ({
   const enrichedAssets = React.useMemo(() => deriveAssets(
     transactions.map(t => ({ date: t.date, description: t.description, amount: t.amount, type: t.type, category: t.category })),
     assets,
-    enrichedLiabilities // Pass enriched liabilities (includes auto-tracked loans)
-  ), [transactions, assets, enrichedLiabilities]);
+    enrichedLiabilities, // Pass enriched liabilities (includes auto-tracked loans)
+    investments // Pass investments from investments table
+  ), [transactions, assets, enrichedLiabilities, investments]);
 
   const summary = React.useMemo(() => summarizeNetWorth(
     enrichedAssets,
@@ -145,7 +148,7 @@ export const NetWorthPage: React.FC<Props> = ({
   };
 
   return (
-    <div className="max-w-7xl mx-auto" style={{ marginRight: `${chatPanelWidth}px`, transition: 'margin-right 0.3s ease-in-out' }}>
+    <div style={{ marginRight: `${chatPanelWidth}px`, transition: 'margin-right 0.3s ease-in-out' }}>
       {isLoading ? (
         <div className="flex justify-center items-center h-64">
           <p className="text-lg font-medium text-gray-600 dark:text-gray-300 animate-pulse">Loading net worth data...</p>
@@ -653,6 +656,7 @@ export const NetWorthPage: React.FC<Props> = ({
         initialData={modalData}
         onSave={handleModalSave}
         onDelete={handleModalDelete}
+        existingAssets={assets}
       />
     </div >
   );

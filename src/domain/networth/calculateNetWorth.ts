@@ -46,8 +46,21 @@ interface Tx {
  * - User‑entered assets list
  * - Investment categories (auto-tracked from transactions)
  * - Suggested property assets (when property loans are detected)
+ * - Real investments from investments table
  */
-export function deriveAssets(transactions: Tx[], userAssets: Asset[], liabilities?: Liability[]): Asset[] {
+export function deriveAssets(
+  transactions: Tx[], 
+  userAssets: Asset[], 
+  liabilities?: Liability[],
+  investments?: Array<{
+    id: string;
+    name: string;
+    type: string;
+    currentValue: number;
+    date: string;
+    lastUpdated?: string;
+  }>
+): Asset[] {
   const totalCredits = transactions.filter(t => t.type === 'credit').reduce((s, t) => s + t.amount, 0);
   const totalDebits = transactions.filter(t => t.type === 'debit').reduce((s, t) => s + Math.abs(t.amount), 0);
   const cashValue = totalCredits - totalDebits;
@@ -132,6 +145,25 @@ export function deriveAssets(transactions: Tx[], userAssets: Asset[], liabilitie
         assets[idx].createdOn = cashCreatedOn;
       }
     }
+  }
+  
+  // Add real investments from investments table (Stock, Mutual Fund, Crypto, ETF, etc.)
+  if (investments && investments.length > 0) {
+    investments.forEach(investment => {
+      // Check if not already added
+      const exists = assets.some(a => a.id === `investment-${investment.id}`);
+      
+      if (!exists) {
+        assets.push({
+          id: `investment-${investment.id}`,
+          name: `${investment.name} (${investment.type})`,
+          type: 'investment', // Standardized type for net worth
+          currentValue: investment.currentValue,
+          lastUpdated: investment.lastUpdated || new Date().toISOString().split('T')[0],
+          createdOn: investment.date
+        });
+      }
+    });
   }
   
   // Add suggested property assets based on property loans

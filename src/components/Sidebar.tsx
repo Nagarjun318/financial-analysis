@@ -1,5 +1,5 @@
 import React from 'react';
-import { Menu, X, Home, User, Briefcase, TrendingUp, PieChart, LogOut, ShoppingCart, Wallet, Target, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Menu, X, Home, User, Briefcase, TrendingUp, PieChart, LogOut, ShoppingCart, Wallet, Target, ChevronLeft, ChevronRight, BarChart3 } from 'lucide-react';
 import ThemeSwitcher from './ThemeSwitcher';
 
 interface SidebarProps {
@@ -34,11 +34,20 @@ const Sidebar: React.FC<SidebarProps> = ({ currentSection, onSectionChange, user
             label: 'Finance',
             items: [
                 { id: 'finance', label: 'Finance', icon: PieChart },
+                { id: 'analytics', label: 'Analytics', icon: BarChart3 },
                 { id: 'investment', label: 'Investment', icon: TrendingUp },
                 { id: 'networth', label: 'Net Worth', icon: Wallet },
                 { id: 'goals', label: 'Goals', icon: Target },
+                { id: 'documents', label: 'Documents', icon: PieChart },
             ]
-        }
+        },
+        ...(!userEmail ? [{
+            id: 'account',
+            label: 'Account',
+            items: [
+                { id: 'auth', label: 'Login', icon: User },
+            ]
+        }] : [])
     ];
 
     return (

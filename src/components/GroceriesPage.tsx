@@ -1,8 +1,8 @@
 import React from 'react';
-const { useState, useEffect } = React;
+const { useState, useEffect, useRef } = React;
 import { supabase } from '../services/supabaseClient';
-import { Plus, Trash2, ShoppingCart, Loader2, AlertTriangle, Minus, ChevronDown, ChevronRight, Check, Edit2, X, Sparkles, Bot } from 'lucide-react';
-import { suggestGroceryItemDetails } from '../services/geminiService';
+import { Plus, Trash2, ShoppingCart, Loader2, AlertTriangle, Minus, ChevronDown, ChevronRight, Check, Edit2, X, Sparkles, Bot, Settings } from 'lucide-react';
+import { suggestGroceryItemDetails, GEMINI_MODELS, GeminiModel } from '../services/geminiService';
 import { formatCurrency } from '../utils';
 import { GroceryAdvisorChat } from './GroceryAdvisorChat';
 
@@ -51,6 +51,10 @@ const GroceriesPage: React.FC<{ userId: string }> = ({ userId }) => {
     const [availableCategories, setAvailableCategories] = useState(BASE_CATEGORIES as string[]);
     const [expandedCategories, setExpandedCategories] = useState(new Set(BASE_CATEGORIES));
     const [isSuggestingDetails, setIsSuggestingDetails] = useState(false);
+    const [selectedModel, setSelectedModel] = useState<GeminiModel>(GEMINI_MODELS.FLASH_LITE);
+    const [showModelSelector, setShowModelSelector] = useState(false);
+
+    const modelSelectorRef = useRef<HTMLDivElement>(null);
 
     const [newItem, setNewItem] = useState({
         item_name: '',
@@ -74,6 +78,20 @@ const GroceriesPage: React.FC<{ userId: string }> = ({ userId }) => {
     useEffect(() => {
         fetchData();
     }, [userId]);
+
+    // Click outside to close model selector
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (modelSelectorRef.current && !modelSelectorRef.current.contains(event.target as Node)) {
+                setShowModelSelector(false);
+            }
+        };
+
+        if (showModelSelector) {
+            document.addEventListener('mousedown', handleClickOutside);
+            return () => document.removeEventListener('mousedown', handleClickOutside);
+        }
+    }, [showModelSelector]);
 
     const fetchData = async () => {
         await Promise.all([fetchGroceries(), fetchShoppingList()]);
@@ -130,7 +148,7 @@ const GroceriesPage: React.FC<{ userId: string }> = ({ userId }) => {
             if (newItem.item_name.trim().length >= 3 && newItem.category !== 'Custom') {
                 setIsSuggestingDetails(true);
                 try {
-                    const suggested = await suggestGroceryItemDetails(newItem.item_name, availableCategories);
+                    const suggested = await suggestGroceryItemDetails(newItem.item_name, availableCategories, selectedModel);
 
                     // Update category
                     if (suggested.category) {
@@ -159,6 +177,17 @@ const GroceriesPage: React.FC<{ userId: string }> = ({ userId }) => {
         const timeoutId = setTimeout(suggestDetails, 800);
         return () => clearTimeout(timeoutId);
     }, [newItem.item_name]);
+
+    const getModelDisplayName = (model: GeminiModel): string => {
+        switch (model) {
+            case GEMINI_MODELS.PRO_LATEST: return 'Pro';
+            case GEMINI_MODELS.FLASH_LATEST: return 'Flash';
+            case GEMINI_MODELS.FLASH_2_0: return 'Flash 2.0';
+            case GEMINI_MODELS.FLASH_LITE: return 'Flash Lite';
+            case GEMINI_MODELS.GEMMA_3: return 'Gemma 3';
+            default: return 'Flash Lite';
+        }
+    };
 
     const handleAddItem = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -701,6 +730,41 @@ const GroceriesPage: React.FC<{ userId: string }> = ({ userId }) => {
                                 </div>
                                 Add New Item
                             </h3>
+                            {/* Model Selector */}
+                            {!editingItem && (
+                                <div className="relative" ref={modelSelectorRef}>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowModelSelector(!showModelSelector)}
+                                        className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                                        title={`AI Model: ${getModelDisplayName(selectedModel)}`}
+                                    >
+                                        <Settings className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+                                    </button>
+
+                                    {showModelSelector && (
+                                        <div className="absolute top-full right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 py-1 z-50">
+                                            {Object.values(GEMINI_MODELS).map((model) => (
+                                                <button
+                                                    key={model}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setSelectedModel(model);
+                                                        setShowModelSelector(false);
+                                                    }}
+                                                    className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors ${
+                                                        selectedModel === model
+                                                            ? 'text-brand-primary font-medium bg-brand-primary/5'
+                                                            : 'text-gray-700 dark:text-gray-300'
+                                                    }`}
+                                                >
+                                                    {getModelDisplayName(model)}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                         <form onSubmit={handleAddItem} className="grid grid-cols-1 md:grid-cols-12 gap-5 items-end">
                             <div className="md:col-span-3 space-y-1.5">

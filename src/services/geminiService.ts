@@ -19,6 +19,7 @@ export const GEMINI_MODELS = {
 	FLASH_2_0: 'gemini-2.0-flash',
 	FLASH_LITE: 'gemini-flash-lite-latest',
 	FLASH_2_5: 'gemini-2.5-flash',
+	GEMMA_3: 'gemma-3-27b-it',
 } as const;
 
 export type GeminiModel = typeof GEMINI_MODELS[keyof typeof GEMINI_MODELS];
@@ -30,9 +31,46 @@ interface APIResponse {
 }
 
 /**
+ * Retry a function with exponential backoff
+ */
+async function retryWithBackoff<T>(
+	fn: () => Promise<T>,
+	maxRetries: number = 3,
+	initialDelay: number = 1000
+): Promise<T> {
+	let lastError: Error | unknown;
+	
+	for (let attempt = 0; attempt < maxRetries; attempt++) {
+		try {
+			return await fn();
+		} catch (error) {
+			lastError = error;
+			
+			// Don't retry on certain errors
+			if (error instanceof Error) {
+				if (error.message.includes('blocked') || 
+				    error.message.includes('API key') ||
+				    error.message.includes('Quota exceeded')) {
+					throw error;
+				}
+			}
+			
+			if (attempt < maxRetries - 1) {
+				const delay = initialDelay * Math.pow(2, attempt);
+				console.log(`Retry attempt ${attempt + 1}/${maxRetries} after ${delay}ms...`);
+				await new Promise(resolve => setTimeout(resolve, delay));
+			}
+		}
+	}
+	
+	throw lastError;
+}
+
+/**
  * Call Gemini API directly using REST endpoint
  */
 export async function callGeminiAPI(prompt: string, model: GeminiModel = GEMINI_MODELS.PRO_LATEST): Promise<APIResponse> {
+	return retryWithBackoff(async () => {
 	const { apiKey } = await getGeminiClient();
 	const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
@@ -61,10 +99,10 @@ export async function callGeminiAPI(prompt: string, model: GeminiModel = GEMINI_
 
 		// Check if it's a rate limit error (429), quota exceeded (403), or overloaded (503)
 		if (response.status === 429 || response.status === 403 || response.status === 503) {
-			// If using pro model and hit rate limit/overload, try flash model
+			// If using pro model and hit rate limit/overload, try Gemma model
 			if (model === GEMINI_MODELS.PRO_LATEST) {
-				console.warn(`Pro model issue (${response.status}), falling back to Flash model`);
-				const fallbackResult = await callGeminiAPI(prompt, GEMINI_MODELS.FLASH_LATEST);
+				console.warn(`Pro model issue (${response.status}), falling back to Gemma 3 model`);
+				const fallbackResult = await callGeminiAPI(prompt, GEMINI_MODELS.GEMMA_3);
 
 				let reason = 'Rate limit exceeded';
 				if (response.status === 403) reason = 'Quota exceeded';
@@ -82,13 +120,30 @@ export async function callGeminiAPI(prompt: string, model: GeminiModel = GEMINI_
 	}
 
 	const data = await response.json();
-	const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+	
+	// Check for safety/blocking issues
+	if (data.promptFeedback?.blockReason) {
+		console.error('Gemini API blocked request:', data.promptFeedback);
+		throw new Error(`Gemini API blocked request: ${data.promptFeedback.blockReason}`);
+	}
+
+	const candidate = data.candidates?.[0];
+	
+	// Check if response was blocked by safety filters
+	if (candidate?.finishReason === 'SAFETY' || candidate?.finishReason === 'RECITATION') {
+		console.error('Gemini response blocked:', candidate);
+		throw new Error(`Gemini response blocked due to: ${candidate.finishReason}`);
+	}
+
+	const text = candidate?.content?.parts?.[0]?.text;
 
 	if (!text) {
-		throw new Error('No response from Gemini API');
+		console.error('No text in Gemini response. Full response:', JSON.stringify(data, null, 2));
+		throw new Error('No response from Gemini API. Check console for details.');
 	}
 
 	return { text, usedFallback: false };
+	});
 }
 
 export interface MonthlyInsight {
@@ -159,56 +214,56 @@ export async function searchTransactionsWithAI(
 
 	const prompt = `You are a financial data analyst. Analyze this natural language query and return a JSON object with filter criteria to find matching transactions.
 
-User Query: "${query}"
+	User Query: "${query}"
 
-Available Data:
-- Date range: ${minDate} to ${maxDate}
-- Categories: ${categories.join(', ')}
-- Sample transactions: ${JSON.stringify(sampleTransactions, null, 2)}
+	Available Data:
+	- Date range: ${minDate} to ${maxDate}
+	- Categories: ${categories.join(', ')}
+	- Sample transactions: ${JSON.stringify(sampleTransactions, null, 2)}
 
-Instructions:
-1. Parse the user's intent (amount filters, date ranges, categories, keywords, transaction type, limit, sorting, visualization)
-2. Return ONLY a valid JSON object with these optional fields:
-   {
-     "minAmount": number | null,
-     "maxAmount": number | null,
-     "startDate": "YYYY-MM-DD" | null,
-     "endDate": "YYYY-MM-DD" | null,
-     "categories": string[] | null,
-     "keywords": string[] | null,
-     "type": "debit" | "credit" | null,
-     "description": string | null,
-     "limit": number | null,
-     "sortBy": "amount" | "date" | null,
-     "sortOrder": "asc" | "desc" | null,
-     "visualize": boolean,
-     "chartType": "bar" | "pie" | "line" | null,
-     "chartTitle": string | null
-   }
+	Instructions:
+	1. Parse the user's intent (amount filters, date ranges, categories, keywords, transaction type, limit, sorting, visualization)
+	2. Return ONLY a valid JSON object with these optional fields:
+	{
+		"minAmount": number | null,
+		"maxAmount": number | null,
+		"startDate": "YYYY-MM-DD" | null,
+		"endDate": "YYYY-MM-DD" | null,
+		"categories": string[] | null,
+		"keywords": string[] | null,
+		"type": "debit" | "credit" | null,
+		"description": string | null,
+		"limit": number | null,
+		"sortBy": "amount" | "date" | null,
+		"sortOrder": "asc" | "desc" | null,
+		"visualize": boolean,
+		"chartType": "bar" | "pie" | "line" | null,
+		"chartTitle": string | null
+	}
 
-Examples:
-- "shopping over 5000" → {"minAmount": 5000, "categories": ["Shopping"]}
-- "groceries in October" → {"categories": ["Groceries"], "startDate": "2025-10-01", "endDate": "2025-10-31"}
-- "UPI transactions last month" → {"keywords": ["UPI"], "startDate": "calculate last month"}
-- "salary income" → {"type": "credit", "keywords": ["salary"]}
-- "top 10 expenses" → {"type": "debit", "limit": 10, "sortBy": "amount", "sortOrder": "desc"}
-- "5 largest shopping expenses" → {"categories": ["Shopping"], "type": "debit", "limit": 5, "sortBy": "amount", "sortOrder": "desc"}
-- "recent 20 transactions" → {"limit": 20, "sortBy": "date", "sortOrder": "desc"}
-- "generate chart for top 10 expenses" → {"type": "debit", "limit": 10, "sortBy": "amount", "sortOrder": "desc", "visualize": true, "chartType": "bar", "chartTitle": "Top 10 Expenses"}
-- "show pie chart of expenses by category" → {"type": "debit", "visualize": true, "chartType": "pie", "chartTitle": "Expenses by Category"}
-- "graph my monthly spending" → {"visualize": true, "chartType": "line", "chartTitle": "Monthly Spending"}
+	Examples:
+	- "shopping over 5000" → {"minAmount": 5000, "categories": ["Shopping"]}
+	- "groceries in October" → {"categories": ["Groceries"], "startDate": "2025-10-01", "endDate": "2025-10-31"}
+	- "UPI transactions last month" → {"keywords": ["UPI"], "startDate": "calculate last month"}
+	- "salary income" → {"type": "credit", "keywords": ["salary"]}
+	- "top 10 expenses" → {"type": "debit", "limit": 10, "sortBy": "amount", "sortOrder": "desc"}
+	- "5 largest shopping expenses" → {"categories": ["Shopping"], "type": "debit", "limit": 5, "sortBy": "amount", "sortOrder": "desc"}
+	- "recent 20 transactions" → {"limit": 20, "sortBy": "date", "sortOrder": "desc"}
+	- "generate chart for top 10 expenses" → {"type": "debit", "limit": 10, "sortBy": "amount", "sortOrder": "desc", "visualize": true, "chartType": "bar", "chartTitle": "Top 10 Expenses"}
+	- "show pie chart of expenses by category" → {"type": "debit", "visualize": true, "chartType": "pie", "chartTitle": "Expenses by Category"}
+	- "graph my monthly spending" → {"visualize": true, "chartType": "line", "chartTitle": "Monthly Spending"}
 
-Important:
-- For relative dates like "last month", calculate the actual dates based on current date being ${new Date().toISOString().split('T')[0]}
-- Match categories from the available list (case-insensitive)
-- For "top N" or "largest" queries, set limit and sortBy="amount", sortOrder="desc"
-- For "smallest" or "lowest", set sortBy="amount", sortOrder="asc"
-- For "recent" or "latest", set sortBy="date", sortOrder="desc"
-- If query mentions "chart", "graph", "visualize", "pie chart", "bar chart", set visualize=true
-- Choose chartType: "bar" for comparisons/rankings, "pie" for category distributions, "line" for trends over time
-- Generate descriptive chartTitle based on the query
-- Return ONLY the JSON object, no explanation
-- If unclear, use broader filters rather than none`;
+	Important:
+	- For relative dates like "last month", calculate the actual dates based on current date being ${new Date().toISOString().split('T')[0]}
+	- Match categories from the available list (case-insensitive)
+	- For "top N" or "largest" queries, set limit and sortBy="amount", sortOrder="desc"
+	- For "smallest" or "lowest", set sortBy="amount", sortOrder="asc"
+	- For "recent" or "latest", set sortBy="date", sortOrder="desc"
+	- If query mentions "chart", "graph", "visualize", "pie chart", "bar chart", set visualize=true
+	- Choose chartType: "bar" for comparisons/rankings, "pie" for category distributions, "line" for trends over time
+	- Generate descriptive chartTitle based on the query
+	- Return ONLY the JSON object, no explanation
+	- If unclear, use broader filters rather than none`;
 
 	try {
 		const apiResponse = await callGeminiAPI(prompt, model);
@@ -376,52 +431,52 @@ export async function generateAIForecast(
 
 	const prompt = `You are a financial advisor AI. Analyze the following transaction history and generate a detailed forecast for next month (${nextMonth}).
 
-MONTHLY HISTORY (Last 12 months):
-${monthlyArray.slice(-12).map(m =>
+	MONTHLY HISTORY (Last 12 months):
+	${monthlyArray.slice(-12).map(m =>
 		`${m.month}: Income ₹${m.income.toFixed(0)}, Expense ₹${m.expense.toFixed(0)}, Savings ₹${m.savings.toFixed(0)}, Transactions: ${m.count}`
 	).join('\n')}
 
-TOP EXPENSE CATEGORIES:
-${topCategories.map(([cat, amt]) => `${cat}: ₹${amt.toFixed(0)}`).join('\n')}
+	TOP EXPENSE CATEGORIES:
+	${topCategories.map(([cat, amt]) => `${cat}: ₹${amt.toFixed(0)}`).join('\n')}
 
-RECENT TRANSACTIONS (Last 20):
-${recentTransactions.slice(0, 20).map(t =>
+	RECENT TRANSACTIONS (Last 20):
+	${recentTransactions.slice(0, 20).map(t =>
 		`${t.date}: ${t.description} - ${t.category} (AI: ${t.ai_category || 'N/A'}) - ₹${t.amount.toFixed(0)}`
 	).join('\n')}
 
-CURRENT ANALYTICS:
-- Total Income: ₹${analytics.summary.totalIncome.toFixed(0)}
-- Total Expense: ₹${analytics.summary.totalExpenses.toFixed(0)}
-- Net Savings: ₹${analytics.summary.netSavings.toFixed(0)}
-- Average Monthly Income: ₹${(analytics.summary.totalIncome / Math.max(monthlyArray.length, 1)).toFixed(0)}
-- Average Monthly Expense: ₹${(analytics.summary.totalExpenses / Math.max(monthlyArray.length, 1)).toFixed(0)}
+	CURRENT ANALYTICS:
+	- Total Income: ₹${analytics.summary.totalIncome.toFixed(0)}
+	- Total Expense: ₹${analytics.summary.totalExpenses.toFixed(0)}
+	- Net Savings: ₹${analytics.summary.netSavings.toFixed(0)}
+	- Average Monthly Income: ₹${(analytics.summary.totalIncome / Math.max(monthlyArray.length, 1)).toFixed(0)}
+	- Average Monthly Expense: ₹${(analytics.summary.totalExpenses / Math.max(monthlyArray.length, 1)).toFixed(0)}
 
-Based on this data, provide a JSON response with the following structure:
-{
-	"projectedIncome": <number, estimated income for next month in ₹>,
-	"projectedExpense": <number, estimated expense for next month in ₹>,
-	"insights": "<string, 2-3 sentences about spending patterns, seasonality, trends>",
-	"confidence": <number, 0-100 confidence score based on data consistency>,
-	"recommendations": [<array of 3-5 actionable recommendations to improve finances>],
-	"trends": [
-		{
-			"category": "<category name>",
-			"trend": "increasing|decreasing|stable",
-			"change": <percentage change, positive or negative>
-		}
-	],
-	"warnings": [<array of potential financial concerns or upcoming risks>]
-}
+	Based on this data, provide a JSON response with the following structure:
+	{
+		"projectedIncome": <number, estimated income for next month in ₹>,
+		"projectedExpense": <number, estimated expense for next month in ₹>,
+		"insights": "<string, 2-3 sentences about spending patterns, seasonality, trends>",
+		"confidence": <number, 0-100 confidence score based on data consistency>,
+		"recommendations": [<array of 3-5 actionable recommendations to improve finances>],
+		"trends": [
+			{
+				"category": "<category name>",
+				"trend": "increasing|decreasing|stable",
+				"change": <percentage change, positive or negative>
+			}
+		],
+		"warnings": [<array of potential financial concerns or upcoming risks>]
+	}
 
-Important:
-1. Base predictions on historical patterns and trends
-2. Consider seasonality (holidays, recurring bills)
-3. Identify unusual spending patterns
-4. Provide specific, actionable recommendations
-5. Warn about potential budget overruns
-6. Confidence should reflect data quality and consistency
-7. Ensure all numbers are realistic and based on historical data
-8. Return ONLY valid JSON, no markdown or extra text`;
+	Important:
+	1. Base predictions on historical patterns and trends
+	2. Consider seasonality (holidays, recurring bills)
+	3. Identify unusual spending patterns
+	4. Provide specific, actionable recommendations
+	5. Warn about potential budget overruns
+	6. Confidence should reflect data quality and consistency
+	7. Ensure all numbers are realistic and based on historical data
+	8. Return ONLY valid JSON, no markdown or extra text`;
 
 	try {
 		const apiResponse = await callGeminiAPI(prompt, model);
@@ -548,6 +603,7 @@ export async function predictTransactionCategory(
  * Batch predict categories for multiple transactions
  * More efficient than individual predictions
  * Uses pattern matching based on description keywords
+ * Processes in batches of 5 to avoid API limits
  */
 export async function predictTransactionCategoriesBatch(
 	transactions: Array<{ id: number; description: string; amount: number }>,
@@ -573,92 +629,151 @@ export async function predictTransactionCategoriesBatch(
 		return results;
 	}
 
-	const transactionList = transactionsForAI.map((t, idx) =>
+	// Process in batches of 10 to avoid overwhelming the API
+	const BATCH_SIZE = 10;
+	const aiResults: Array<{ id: number; ai_category: string }> = [];
+	
+	console.log(`Processing ${transactionsForAI.length} transactions in batches of ${BATCH_SIZE}`);
+	
+	for (let i = 0; i < transactionsForAI.length; i += BATCH_SIZE) {
+		const batch = transactionsForAI.slice(i, i + BATCH_SIZE);
+		const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
+		const totalBatches = Math.ceil(transactionsForAI.length / BATCH_SIZE);
+		
+		console.log(`Processing batch ${batchNumber}/${totalBatches} (${batch.length} transactions)`);
+		
+		try {
+			const batchResults = await processSingleBatch(batch, model);
+			aiResults.push(...batchResults);
+		} catch (error) {
+			console.error(`Batch ${batchNumber} failed:`, error);
+			// On error, add fallback categories for this batch
+			const fallbackBatch = batch.map(t => ({ id: t.id, ai_category: 'Others' }));
+			aiResults.push(...fallbackBatch);
+		}
+		
+		// Small delay between batches to avoid rate limits
+		if (i + BATCH_SIZE < transactionsForAI.length) {
+			await new Promise(resolve => setTimeout(resolve, 500));
+		}
+	}
+	
+	return [...results, ...aiResults];
+}
+
+/**
+ * Process a single batch of transactions (internal helper)
+ */
+async function processSingleBatch(
+	batch: Array<{ id: number; description: string; amount: number }>,
+	model: GeminiModel
+): Promise<Array<{ id: number; ai_category: string }>> {
+	const transactionList = batch.map((t, idx) =>
 		`${idx + 1}. ID: ${t.id} | "${t.description}" | ₹${Math.abs(t.amount).toFixed(2)} (${t.amount >= 0 ? 'credit' : 'debit'})`
 	).join('\n');
 
 	const prompt = `You are a financial transaction categorization expert. Analyze these transactions and predict the most appropriate category for each.
 
-TRANSACTION LIST:
-${transactionList}
+	TRANSACTION LIST:
+	${transactionList}
 
-CATEGORIES TO CHOOSE FROM:
-- Food: Restaurants, Swiggy, Zomato, Metro Mart, Supermarkets (Spar, More, Reliance Fresh, Big Basket, DMart), Cafes (Starbucks, Tea, Coffee), Fast Food (Dominos, Pizza, Burger, KFC, McDonalds, Subway), Bakeries, Sweets, Hotels, Diners.
-- Shopping: Clothing & Fashion (Chennai Silks, Pothys, Jeyachandran, Zudio, Westside, Trends, Pommys, Myntra, Ajio, Tata Cliq, Max, Pantaloons, H&M, Zara, Uniqlo, Nike, Adidas, Puma), Electronics (Reliance Digital, Croma, Sathya, Viveks, Poorvika, Apple, Samsung), Accessories (Titan, Tanishq, Kalyan), Online (Amazon, Flipkart), Decathlon.
-- Travel: Ride-hailing (Uber, Ola, Rapido), Fuel (Shell, Petrol, Diesel, Bunk, BPCL, HPCL, IOCL), Transport (Flight, Train, Bus, IRCTC, Red Bus, Indigo, Air India, CMRL, Metro), Tolls (Fastag).
-- Entertainment: Movies (Cinema, PVR, Inox, BookMyShow), Streaming (Netflix, Prime, Hotstar, Spotify, Disney, YouTube), Gaming (Steam, PlayStation), Events, Outings, Amusement Parks.
-- Health: Medical (Pharmacy, Doctor, Hospital, Clinic, Labs, Diagnostics, Scan, Dental), Brands (MedPlus, Apollo, 1mg, Netmeds, PharmEasy, Lenskart), Fitness (Gym, Cult, Sports).
-- Utilities: Bills (Electricity, Water, Gas, Maintenance), Recharge (Mobile, DTH, Data Card), Providers (Bescom, TNEB, Act, Airtel, Jio, Vodafone, BSNL, Tata Sky, Sun Direct, LPG, Indane).
-- Housing: Rent, Furniture (Ikea, Pepperfry, Home Centre, Urban Ladder), Decor, Repairs (Plumber, Electrician, Carpenter, Paint), Services (Maid, Cook, Cleaning).
-- Education: Fees (School, College, University), Courses (Udemy, Coursera, Training), Materials (Books, Stationery, Kindle).
-- Finance: Investments (Mutual Fund, SIP, Zerodha, Groww, Upstox), Loans (EMI, Bajaj), Insurance (LIC, Premium), Bank Charges (Min Bal, SMS Charge, Credit Card Payment).
-- Personal Transfer: UPI to friends/family, Self-transfer, Cash Withdrawals (ATM, ATW, NWD), NEFT/IMPS (if no merchant identified).
-- Income: Salary (Cognizant, Accenture, Comcast), Refunds, Cashback, Interest, Dividends.
-- Others: Only if absolutely no other category fits.
+	CATEGORIES TO CHOOSE FROM:
+	- Food: Restaurants, Swiggy, Zomato, Metro Mart, Supermarkets (Spar, More, Reliance Fresh, Big Basket, DMart), Cafes (Starbucks, Tea, Coffee), Fast Food (Dominos, Pizza, Burger, KFC, McDonalds, Subway), Bakeries, Sweets, Hotels, Diners.
+	- Shopping: Clothing & Fashion (Chennai Silks, Pothys, Jeyachandran, Zudio, Westside, Trends, Pommys, Myntra, Ajio, Tata Cliq, Max, Pantaloons, H&M, Zara, Uniqlo, Nike, Adidas, Puma), Electronics (Reliance Digital, Croma, Sathya, Viveks, Poorvika, Apple, Samsung), Accessories (Titan, Tanishq, Kalyan), Online (Amazon, Flipkart), Decathlon.
+	- Travel: Ride-hailing (Uber, Ola, Rapido), Fuel (Shell, Petrol, Diesel, Bunk, BPCL, HPCL, IOCL), Transport (Flight, Train, Bus, IRCTC, Red Bus, Indigo, Air India, CMRL, Metro), Tolls (Fastag).
+	- Entertainment: Movies (Cinema, PVR, Inox, BookMyShow), Streaming (Netflix, Prime, Hotstar, Spotify, Disney, YouTube), Gaming (Steam, PlayStation), Events, Outings, Amusement Parks.
+	- Health: Medical (Pharmacy, Doctor, Hospital, Clinic, Labs, Diagnostics, Scan, Dental), Brands (MedPlus, Apollo, 1mg, Netmeds, PharmEasy, Lenskart), Fitness (Gym, Cult, Sports).
+	- Utilities: Bills (Electricity, Water, Gas, Maintenance), Recharge (Mobile, DTH, Data Card), Providers (Bescom, TNEB, Act, Airtel, Jio, Vodafone, BSNL, Tata Sky, Sun Direct, LPG, Indane).
+	- Housing: Rent, Furniture (Ikea, Pepperfry, Home Centre, Urban Ladder), Decor, Repairs (Plumber, Electrician, Carpenter, Paint), Services (Maid, Cook, Cleaning).
+	- Education: Fees (School, College, University), Courses (Udemy, Coursera, Training), Materials (Books, Stationery, Kindle).
+	- Finance: Investments (Mutual Fund, SIP, Zerodha, Groww, Upstox), Loans (EMI, Bajaj), Insurance (LIC, Premium), Bank Charges (Min Bal, SMS Charge, Credit Card Payment).
+	- Personal Transfer: UPI to friends/family, Self-transfer, Cash Withdrawals (ATM, ATW, NWD), NEFT/IMPS (if no merchant identified).
+	- Income: Salary (Cognizant, Accenture, Comcast), Refunds, Cashback, Interest, Dividends.
+	- Others: Only if absolutely no other category fits.
 
-RULES & INSTRUCTIONS:
+	RULES & INSTRUCTIONS:
 
-PRIORITY ORDER:
-1. First: Check for Income keywords (Cognizant, Comcast, Accenture, Salary).
-2. Second: Check for specific Merchant/Brand names (e.g., Zudio → Shopping, Swiggy → Food).
-3. Third: Check for Transaction Types (UPI, ATW, NEFT) only if no merchant is found.
+	PRIORITY ORDER:
+	1. First: Check for Income keywords (Cognizant, Comcast, Accenture, Salary).
+	2. Second: Check for specific Merchant/Brand names (e.g., Zudio → Shopping, Swiggy → Food).
+	3. Third: Check for Transaction Types (UPI, ATW, NEFT) only if no merchant is found.
 
-SPECIFIC CATEGORIZATION RULES:
-- Income: Any mention of "Cognizant", "Comcast", "Accenture", "Salary", "Dividend", or "Credit Interest" must be "Income".
-- Shopping: "Zudio", "Westside", "Trends", "Chennai Silks", "Pothys", "Jeyachandran", "Pommys" must be "Shopping".
-- Food: "Metro Mart", "Swiggy", "Zomato" must be "Food".
-- Travel: "Shell", "BPCL", "HPCL", "Petrol" must be "Travel" (even if it says POS).
-- Finance: "LIC", "Bajaj", "Zerodha", "Groww" must be "Finance".
+	SPECIFIC CATEGORIZATION RULES:
+	- Income: Any mention of "Cognizant", "Comcast", "Accenture", "Salary", "Dividend", or "Credit Interest" must be "Income".
+	- Shopping: "Zudio", "Westside", "Trends", "Chennai Silks", "Pothys", "Jeyachandran", "Pommys" must be "Shopping".
+	- Food: "Metro Mart", "Swiggy", "Zomato" must be "Food".
+	- Travel: "Shell", "BPCL", "HPCL", "Petrol" must be "Travel" (even if it says POS).
+	- Finance: "LIC", "Bajaj", "Zerodha", "Groww" must be "Finance".
 
-TRANSACTION CODE PATTERNS (Fallback Logic):
-- ATW-XXXXXXXX / NWD / ATM WDL: Always "Personal Transfer".
-- UPI-XXXXXXXX: If the description contains a known brand (e.g., "UPI-Swiggy"), categorize by brand. If it contains a person's name or is generic, use "Personal Transfer".
-- POS-XXXXXXXX: Only use "Shopping" if the merchant name is not recognized as Food, Travel, or Health.
-- NEFT / IMPS: Default to "Personal Transfer" unless the text explicitly mentions "Rent" (Housing) or "Fee" (Education).
+	TRANSACTION CODE PATTERNS (Fallback Logic):
+	- ATW-XXXXXXXX / NWD / ATM WDL: Always "Personal Transfer".
+	- UPI-XXXXXXXX: If the description contains a known brand (e.g., "UPI-Swiggy"), categorize by brand. If it contains a person's name or is generic, use "Personal Transfer".
+	- POS-XXXXXXXX: Only use "Shopping" if the merchant name is not recognized as Food, Travel, or Health.
+	- NEFT / IMPS: Default to "Personal Transfer" unless the text explicitly mentions "Rent" (Housing) or "Fee" (Education).
 
-CONTEXTUAL INFERENCE:
-- Do not rely on "POS" or "UPI" alone; look at the text after the code.
-- "Shell" is always Travel (Fuel), never Shopping.
-- "Apollo" is always Health, never Shopping.
+	CONTEXTUAL INFERENCE:
+	- Do not rely on "POS" or "UPI" alone; look at the text after the code.
+	- "Shell" is always Travel (Fuel), never Shopping.
+	- "Apollo" is always Health, never Shopping.
 
-EXAMPLES:
-- "NEFT CR-CHAS0INBX01-COGNIZANT SAL..." → "Income"
-- "POS 512967... POMMYS GARMENTS..." → "Shopping"
-- "POS 512967... METRO MART SUPER..." → "Food"
-- "ATW-512967... KANCHEEPURAM" → "Personal Transfer" (ATM Withdrawal)
+	EXAMPLES:
+	- "NEFT CR-CHAS0INBX01-COGNIZANT SAL..." → "Income"
+	- "POS 512967... POMMYS GARMENTS..." → "Shopping"
+	- "POS 512967... METRO MART SUPER..." → "Food"
+	- "ATW-512967... KANCHEEPURAM" → "Personal Transfer" (ATM Withdrawal)
 
-OUTPUT FORMAT:
-Return results as a JSON array with exact format:
-[
-  {"id": 123, "category": "Food"},
-  {"id": 456, "category": "Shopping"}
-]
+	OUTPUT FORMAT:
+	Return results as a JSON array with exact format:
+	[
+	{"id": 123, "category": "Food"},
+	{"id": 456, "category": "Shopping"}
+	]
 
-Return ONLY the JSON array, no explanation.`;
+	Return ONLY the JSON array, no explanation.`;
 
 	try {
+		console.log(`Predicting categories for ${batch.length} transactions using ${model}`);
 		const apiResponse = await callGeminiAPI(prompt, model);
+		console.log('AI response received, parsing...');
 
 		// Extract JSON from response
 		const jsonMatch = apiResponse.text.match(/\[[\s\S]*\]/);
 		if (!jsonMatch) {
+			console.error('Failed to extract JSON from AI response:', apiResponse.text.substring(0, 500));
 			throw new Error('Could not parse AI response as JSON array');
 		}
 
 		const aiResults = JSON.parse(jsonMatch[0]);
+		console.log(`Successfully parsed ${aiResults.length} category predictions`);
 
-		// Map to expected format and merge with static results
+		// Validate results
+		if (!Array.isArray(aiResults)) {
+			throw new Error('AI response is not an array');
+		}
+
+		// Map to expected format
 		const aiMapped = aiResults.map((r: any) => ({
 			id: r.id,
 			ai_category: r.category || 'Others'
 		}));
 
-		return [...results, ...aiMapped];
+		return aiMapped;
 	} catch (error) {
 		console.error('Batch category prediction error:', error);
-		// Return default categories on error for AI part, plus static results
-		const fallbackAI = transactionsForAI.map(t => ({ id: t.id, ai_category: 'Others' }));
-		return [...results, ...fallbackAI];
+		console.error('Error details:', error instanceof Error ? error.message : String(error));
+		
+		// If using pro model and it failed, try with Gemma model
+		if (model === GEMINI_MODELS.PRO_LATEST) {
+			console.warn('Retrying batch with Gemma 3 model due to error...');
+			try {
+				return await processSingleBatch(batch, GEMINI_MODELS.GEMMA_3);
+			} catch (fallbackError) {
+				console.error('Flash model also failed:', fallbackError);
+			}
+		}
+		
+		// Return default categories on error
+		throw error;
 	}
 }
 
@@ -721,42 +836,42 @@ export async function getFinancialAdvice(
 
 	const prompt = `You are an expert financial advisor helping a user manage their personal finances. Provide personalized, actionable advice based on their transaction data.
 
-FINANCIAL SUMMARY:
-- Total Income: ₹${totalIncome.toFixed(2)}
-- Total Expenses: ₹${totalExpenses.toFixed(2)}
-- Net Savings: ₹${netSavings.toFixed(2)}
-- Savings Rate: ${savingsRate}%
+	FINANCIAL SUMMARY:
+	- Total Income: ₹${totalIncome.toFixed(2)}
+	- Total Expenses: ₹${totalExpenses.toFixed(2)}
+	- Net Savings: ₹${netSavings.toFixed(2)}
+	- Savings Rate: ${savingsRate}%
 
-TOP EXPENSE CATEGORIES:
-${topCategories}
+	TOP EXPENSE CATEGORIES:
+	${topCategories}
 
-MONTHLY SPENDING PATTERN:
-${monthlyPattern}
+	MONTHLY SPENDING PATTERN:
+	${monthlyPattern}
 
-RECENT TRANSACTIONS (Last 20):
-${recentTransactions}
+	RECENT TRANSACTIONS (Last 20):
+	${recentTransactions}
 
-${conversationContext ? `CONVERSATION HISTORY:\n${conversationContext}\n` : ''}
+	${conversationContext ? `CONVERSATION HISTORY:\n${conversationContext}\n` : ''}
 
-USER QUESTION: ${userQuery}
+	USER QUESTION: ${userQuery}
 
-INSTRUCTIONS:
-1. Keep responses VERY SHORT and CRISP (max 100 words, 3-4 bullet points)
-2. Be direct and actionable - give specific advice with numbers
-3. Use simple language - avoid financial jargon
-4. Reference specific categories and amounts from their data
-5. Use emojis sparingly (1-2 max)
-6. End EVERY response with "Follow-up questions:" followed by 3 relevant questions the USER might ask YOU next
+	INSTRUCTIONS:
+	1. Keep responses VERY SHORT and CRISP (max 60 words, 2-3 bullet points)
+	2. Be direct and actionable - give specific advice with numbers
+	3. Use simple language - avoid financial jargon
+	4. Reference specific categories and amounts from their data
+	5. Use emojis sparingly (1-2 max)
+	6. End EVERY response with "Follow-up questions:" followed by 3 relevant questions the USER might ask YOU next
 
-FORMAT:
-[Brief answer in 2-3 bullet points]
+	FORMAT:
+	[Brief answer in 2-3 bullet points]
 
-Follow-up questions:
-- [What user would ask you - e.g., "How can I reduce my grocery spending?"]
-- [What user would ask you - e.g., "What's my biggest expense category?"]
-- [What user would ask you - e.g., "Should I increase my savings?"]
+	Follow-up questions:
+	- [What user would ask you - e.g., "How can I reduce my grocery spending?"]
+	- [What user would ask you - e.g., "What's my biggest expense category?"]
+	- [What user would ask you - e.g., "Should I increase my savings?"]
 
-Provide your response now:`;
+	Provide your response now:`;
 
 	try {
 		const response = await callGeminiAPI(prompt, model);
@@ -781,6 +896,288 @@ export interface KitchenAssistanceResult {
 	}>;
 }
 
+/**
+ * AI Analytics Advisor
+ * Provides deep insights based on visual analytics data (Heatmap, Sankey, Trends)
+ */
+export async function getAnalyticsAdvice(
+	userQuery: string,
+	chartContext: {
+		heatmapSummary: string;
+		sankeySummary: string;
+		trendSummary: string;
+		periodComparison: string;
+	},
+	conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }>,
+	model: GeminiModel = GEMINI_MODELS.FLASH_LITE
+): Promise<string> {
+	const conversationContext = conversationHistory
+		.slice(-6)
+		.map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
+		.join('\n\n');
+
+	const prompt = `You are an expert Data Analyst and Financial Advisor. You are looking at a dashboard with advanced visualizations of the user's finances.
+		
+	VISUALIZATION DATA:
+
+	1. SPENDING HEATMAP (Daily Intensity):
+	${chartContext.heatmapSummary}
+
+	2. INCOME FLOW (Sankey Diagram):
+	${chartContext.sankeySummary}
+
+	3. PERIOD COMPARISON (YoY/MoM):
+	${chartContext.periodComparison}
+
+	4. CATEGORY TRENDS (Top 5):
+	${chartContext.trendSummary}
+
+	${conversationContext ? `CONVERSATION HISTORY:\n${conversationContext}\n` : ''}
+
+	USER QUESTION: ${userQuery}
+
+	INSTRUCTIONS:
+	1. Act as if you are looking at these charts with the user.
+	2. Point out specific patterns (e.g., "Notice how your food spending spikes every weekend").
+	3. Connect the dots between different charts.
+	4. KEEP IT SHORT AND CRISP. Max 50 words per bullet point.
+	5. Use simple, direct language. No fluff.
+	6. End with "Follow-up questions:" and 3 relevant questions.
+
+	FORMAT:
+	[2-3 short, punchy bullet points with key insights]
+
+	Follow-up questions:
+	- [Question 1]
+	- [Question 2]
+	- [Question 3]
+
+	Provide your response now:`;
+
+	try {
+		const response = await callGeminiAPI(prompt, model);
+		return response.text.trim();
+	} catch (error) {
+		console.error('Analytics advice error:', error);
+		throw new Error('Failed to get analytics advice.');
+	}
+}
+
+
+// ---------- Helper validators for chart suggestions ----------
+function isValidChartSuggestion(obj: any): obj is {
+	chartType: string;
+	title: string;
+	description: string;
+	rationale: string;
+	dataPoints: string[];
+} {
+	const allowedTypes = new Set([
+		"Scatter Plot", "Heatmap", "Treemap", "Radar Chart", "Waterfall", "Funnel",
+		"Bubble Chart", "Box Plot", "Area Chart", "Line Chart", "Bar Chart", "Pie Chart"
+	]);
+	if (!obj || typeof obj !== 'object') return false;
+	if (!allowedTypes.has(obj.chartType)) return false;
+	if (typeof obj.title !== 'string' || obj.title.trim().length === 0) return false;
+	if (typeof obj.description !== 'string' || obj.description.trim().length === 0) return false;
+	if (typeof obj.rationale !== 'string' || obj.rationale.trim().length === 0) return false;
+	if (!Array.isArray(obj.dataPoints) || obj.dataPoints.length === 0) return false;
+	if (!obj.dataPoints.every((d: any) => typeof d === 'string' && d.trim().length > 0)) return false;
+	// basic length limits (defensive)
+	if (obj.title.split(/\s+/).length > 6) return false;
+	if (obj.description.split(/\s+/).length > 15) return false;
+	if (obj.rationale.split(/\s+/).length > 20) return false;
+	return true;
+}
+
+/** Extract first JSON object found in text using bracket matching (robust vs regex). */
+function extractFirstJSONObject(text: string): string | null {
+	if (!text) return null;
+	const start = text.indexOf('{');
+	if (start === -1) return null;
+	let depth = 0;
+	for (let i = start; i < text.length; i++) {
+		const ch = text[i];
+		if (ch === '{') depth++;
+		else if (ch === '}') {
+			depth--;
+			if (depth === 0) {
+				return text.slice(start, i + 1);
+			}
+		}
+	}
+	return null;
+}
+
+/**
+ * AI-powered chart suggestion
+ * Analyzes transaction patterns and recommends a new visualization
+ */
+export async function suggestNewChart(
+	transactions: Transaction[],
+	previousSuggestions: string[] = [],
+	model: GeminiModel = GEMINI_MODELS.FLASH_LITE
+): Promise<{
+	chartType: string;
+	title: string;
+	description: string;
+	rationale: string;
+	dataPoints: string[];
+}> {
+	// Defensive normalization & context
+	const tx = (transactions || []).map(t => ({
+		...t,
+		amount: Number(t.amount) || 0,
+		category: (t.category ?? 'Uncategorized') + '',
+		type: t.type === 'credit' ? 'credit' : 'debit',
+		date: t.date ? (new Date(t.date)).toISOString() : null
+	})).filter(t => t.date);
+
+	const totalSpend = tx.filter(t => t.type === 'debit').reduce((s, t) => s + Math.abs(t.amount), 0);
+	const totalIncome = tx.filter(t => t.type === 'credit').reduce((s, t) => s + Math.abs(t.amount), 0);
+
+	const categoriesArr = Array.from(new Set(tx.map(t => (t.category || 'Uncategorized').toString().trim()))).slice(0, 10);
+	const categories = categoriesArr.map(c => c.replace(/[\r\n]+/g, ' ').replace(/,+/g, ' ')).join(', ') || 'N/A';
+
+	let dateRange = 'N/A';
+	if (tx.length > 0) {
+		const dates = tx.map(t => new Date(t.date!).getTime()).filter(d => !Number.isNaN(d));
+		if (dates.length > 0) {
+			const min = new Date(Math.min(...dates)).toISOString().slice(0, 10);
+			const max = new Date(Math.max(...dates)).toISOString().slice(0, 10);
+			dateRange = min === max ? min : `${min} to ${max}`;
+		}
+	}
+
+	const prev = previousSuggestions.slice(0, 10).map(s => s.replace(/[\r\n]+/g, ' ').trim());
+	const previousList = prev.length ? `\nPREVIOUSLY SUGGESTED (DO NOT REPEAT):\n${prev.map((s, i) => `${i + 1}. ${s}`).join('\n')}` : '';
+
+	// sanitized, explicit prompt with JSON schema
+	const prompt = [
+		`You are a Creative Data Visualization Expert.`,
+		`Suggest ONE unique, insightful chart that hasn't been tried yet.`,
+		``,
+		`DATA SUMMARY:`,
+		`- Transactions: ${tx.length}`,
+		`- Income: ₹${Math.round(totalIncome).toLocaleString('en-IN')}`,
+		`- Spend: ₹${Math.round(totalSpend).toLocaleString('en-IN')}`,
+		`- Categories: ${categories}`,
+		`- Period: ${dateRange}`,
+		``,
+		`EXISTING CHARTS (avoid these):`,
+		`1. Spending Heatmap (daily intensity calendar)`,
+		`2. Income & Expense Flow (Sankey diagram)`,
+		`3. Period Comparison (YoY/MoM bars)`,
+		`4. Category Trends (multi-line over time)`,
+		`${previousList}`,
+		``,
+		`Return ONLY valid JSON EXACTLY matching this schema:`,
+		`{`,
+		`  "chartType":"Scatter Plot|Heatmap|Treemap|Radar Chart|Waterfall|Funnel|Bubble Chart|Box Plot|Area Chart|Line Chart|Bar Chart|Pie Chart",`,
+		`  "title":"Unique title (max 6 words)",`,
+		`  "description":"What it reveals (max 15 words)",`,
+		`  "rationale":"Why valuable (max 20 words)",`,
+		`  "dataPoints":["Axis/Dimension 1","Axis/Dimension 2"]`,
+		`}`,
+		`Pick something DIFFERENT from previous suggestions.`
+	].join('\n');
+
+	try {
+		const response = await callGeminiAPI(prompt, model);
+		const text = response?.text ?? '';
+
+		// Try direct JSON parse first
+		try {
+			const direct = JSON.parse(text);
+			if (isValidChartSuggestion(direct)) return direct;
+		} catch { /* ignore */ }
+
+		// Try to extract first JSON object robustly
+		const jsonText = extractFirstJSONObject(text);
+		if (jsonText) {
+			try {
+				const parsed = JSON.parse(jsonText);
+				if (isValidChartSuggestion(parsed)) return parsed;
+			} catch (e) {
+				// continue to fallback
+				console.warn('Failed to parse extracted JSON for suggestNewChart:', e);
+			}
+		}
+
+		// deterministic fallback suggestions (kept small & predictable)
+		const fallbacks = [
+			{
+				chartType: "Bar Chart",
+				title: "Top Spending Categories",
+				description: "Ranks your highest expense categories by total amount",
+				rationale: "Quickly identifies where most of your money goes",
+				dataPoints: ["Category", "Total Spend (₹)"]
+			},
+			{
+				chartType: "Line Chart",
+				title: "Daily Spending Trend",
+				description: "Shows your spending patterns over time",
+				rationale: "Reveals spending rhythm and identifies unusual spikes",
+				dataPoints: ["Date", "Amount (₹)"]
+			},
+			{
+				chartType: "Heatmap",
+				title: "Hourly Spending Pattern",
+				description: "Visualizes what time of day you spend most",
+				rationale: "Uncovers behavioral patterns in your spending habits",
+				dataPoints: ["Hour", "Total Spend"]
+			}
+		];
+		// choose first fallback deterministically for predictability
+		return fallbacks[0];
+	} catch (error) {
+		console.error('Chart suggestion error:', error);
+		return {
+			chartType: "Bar Chart",
+			title: "Top Spending Categories",
+			description: "Ranks your highest expense categories by total amount",
+			rationale: "Quickly identifies where most of your money goes",
+			dataPoints: ["Category", "Total Spend (₹)"]
+		};
+	}
+}
+
+/**
+ * Generates a set of 3 key financial insights for the dashboard.
+ * Used for the "Financial Pulse" widget.
+ */
+export async function generateDashboardInsights(
+	transactions: Transaction[],
+	model: GeminiModel = GEMINI_MODELS.FLASH_LITE
+): Promise<string[]> {
+	// Quick summary for context
+	const totalSpend = transactions.filter(t => t.type === 'debit').reduce((sum, t) => sum + Math.abs(t.amount), 0);
+	const categories = [...new Set(transactions.map(t => t.category))].slice(0, 5).join(', ');
+
+	const prompt = `You are a Financial Analyst. Analyze this transaction data summary:
+		- Total Spend: ${totalSpend}
+		- Top Categories: ${categories}
+		- Transaction Count: ${transactions.length}
+		
+		Generate exactly 3 short, punchy insights (max 10 words each).
+		Focus on: Spending anomalies, Savings opportunities, or Positive trends.
+		
+		FORMAT:
+		["Insight 1", "Insight 2", "Insight 3"]
+		
+		Return ONLY the JSON array.`;
+
+	try {
+		const response = await callGeminiAPI(prompt, model);
+		const jsonMatch = response.text.match(/\[[\s\S]*\]/);
+		if (!jsonMatch) return ["Spending analysis available.", "Track your expenses daily.", "Review your top categories."];
+		return JSON.parse(jsonMatch[0]);
+	} catch (error) {
+		console.error('Dashboard insights error:', error);
+		return ["Spending analysis available.", "Track your expenses daily.", "Review your top categories."];
+	}
+}
+
 export async function getKitchenAssistance(
 	userQuery: string,
 	inventory: Array<{ item_name: string; current_stock: number; unit: string; category: string }>,
@@ -792,43 +1189,43 @@ export async function getKitchenAssistance(
 
 	const prompt = `You are an expert AI Chef and Kitchen Manager. Help the user with their groceries, cooking, and meal planning.
 
-CURRENT INVENTORY:
-${inventoryList || "No items in inventory."}
+	CURRENT INVENTORY:
+	${inventoryList || "No items in inventory."}
 
-CURRENT SHOPPING LIST:
-${shoppingListItems || "No items in shopping list."}
+	CURRENT SHOPPING LIST:
+	${shoppingListItems || "No items in shopping list."}
 
-USER QUERY: "${userQuery}"
+	USER QUERY: "${userQuery}"
 
-INSTRUCTIONS:
-1. Keep responses VERY SHORT and CRISP (max 100 words, 3-4 bullet points)
-2. Be direct and actionable - give specific cooking/shopping advice
-3. Use simple language - avoid complex culinary jargon
-4. Analyze the user's request (recipe ideas, meal planning, shopping advice, etc.)
-5. If suggesting recipes, prioritize using available inventory
-6. End EVERY response with "Follow-up questions:" followed by 3 relevant questions the USER might ask YOU next
-7. Format your response as a JSON object
+	INSTRUCTIONS:
+	1. Keep responses VERY SHORT and CRISP (max 100 words, 3-4 bullet points)
+	2. Be direct and actionable - give specific cooking/shopping advice
+	3. Use simple language - avoid complex culinary jargon
+	4. Analyze the user's request (recipe ideas, meal planning, shopping advice, etc.)
+	5. If suggesting recipes, prioritize using available inventory
+	6. End EVERY response with "Follow-up questions:" followed by 3 relevant questions the USER might ask YOU next
+	7. Format your response as a JSON object
 
-FORMAT FOR RESPONSE TEXT:
-[Brief answer in 2-3 bullet points]
+	FORMAT FOR RESPONSE TEXT:
+	[Brief answer in 2-3 bullet points]
 
-Follow-up questions:
-- [What user would ask you - e.g., "What dessert can I make?"]
-- [What user would ask you - e.g., "How can I use up leftover rice?"]
-- [What user would ask you - e.g., "What's a quick breakfast idea?"]
+	Follow-up questions:
+	- [What user would ask you - e.g., "What dessert can I make?"]
+	- [What user would ask you - e.g., "How can I use up leftover rice?"]
+	- [What user would ask you - e.g., "What's a quick breakfast idea?"]
 
-JSON STRUCTURE:
-{
-  "response": "Your friendly, helpful text response here with follow-up questions. Use markdown for formatting (bold, lists).",
-  "suggestedShoppingItems": [
-    { "item_name": "Tomato", "category": "Produce", "quantity": 2, "unit": "pcs" }
-  ]
-}
+	JSON STRUCTURE:
+	{
+	"response": "Your friendly, helpful text response here with follow-up questions. Use markdown for formatting (bold, lists).",
+	"suggestedShoppingItems": [
+		{ "item_name": "Tomato", "category": "Produce", "quantity": 2, "unit": "pcs" }
+	]
+	}
 
-IMPORTANT:
-- "suggestedShoppingItems" is optional. Only include it if the user explicitly asks to add items or if a recipe requires missing ingredients.
-- Do not suggest items that are already in the shopping list or have sufficient stock, unless explicitly asked.
-- Return ONLY the valid JSON object.`;
+	IMPORTANT:
+	- "suggestedShoppingItems" is optional. Only include it if the user explicitly asks to add items or if a recipe requires missing ingredients.
+	- Do not suggest items that are already in the shopping list or have sufficient stock, unless explicitly asked.
+	- Return ONLY the valid JSON object.`;
 
 	try {
 		const apiResponse = await callGeminiAPI(prompt, model);
@@ -859,69 +1256,69 @@ export async function suggestGroceryCategory(
 
 	const prompt = `You are a grocery categorization expert. Based on the item name OR brand name, suggest the most appropriate category.
 
-ITEM NAME: "${itemName}"
+	ITEM NAME: "${itemName}"
 
-EXISTING CATEGORIES (prefer these if they fit):
-${availableCategories.join(', ')}
+	EXISTING CATEGORIES (prefer these if they fit):
+	${availableCategories.join(', ')}
 
-INSTRUCTIONS:
-1. If the item fits one of the existing categories, return that category name
-2. If none of the existing categories fit well, suggest a NEW appropriate category name
-3. New categories should be clear, concise, and follow the same naming pattern (e.g., "Electronics", "Pet Supplies", "Baby Care")
-4. Consider common grocery store organization
-5. Recognize brand names and categorize accordingly
-6. Return ONLY the category name (existing or new), nothing else
+	INSTRUCTIONS:
+	1. If the item fits one of the existing categories, return that category name
+	2. If none of the existing categories fit well, suggest a NEW appropriate category name
+	3. New categories should be clear, concise, and follow the same naming pattern (e.g., "Electronics", "Pet Supplies", "Baby Care")
+	4. Consider common grocery store organization
+	5. Recognize brand names and categorize accordingly
+	6. Return ONLY the category name (existing or new), nothing else
 
-IMPORTANT: Recognize popular brand names and categorize them correctly:
+	IMPORTANT: Recognize popular brand names and categorize them correctly:
 
-HOUSEHOLD BRANDS (Detergents, Cleaners):
-- Surf Excel, Rin, Ariel, Tide, Wheel, Harpic, Lizol, Vim → Household
+	HOUSEHOLD BRANDS (Detergents, Cleaners):
+	- Surf Excel, Rin, Ariel, Tide, Wheel, Harpic, Lizol, Vim → Household
 
-COOKING OIL/GHEE BRANDS:
-- Idhayam, Mantra, Fortune, Sundrop, Saffola, Dhara, Gemini → Pantry
+	COOKING OIL/GHEE BRANDS:
+	- Idhayam, Mantra, Fortune, Sundrop, Saffola, Dhara, Gemini → Pantry
 
-PERSONAL CARE BRANDS:
-- Dove, Pantene, Head & Shoulders, Lux, Lifebuoy, Pears, Colgate, Pepsodent → Personal Care
+	PERSONAL CARE BRANDS:
+	- Dove, Pantene, Head & Shoulders, Lux, Lifebuoy, Pears, Colgate, Pepsodent → Personal Care
 
-FOOD/SNACK BRANDS:
-- Lays, Kurkure, Bingo, Haldiram's, Britannia, Parle → Snacks
-- Maggi, Top Ramen, Yippee → Pantry
-- Amul, Mother Dairy, Nandini → Dairy
+	FOOD/SNACK BRANDS:
+	- Lays, Kurkure, Bingo, Haldiram's, Britannia, Parle → Snacks
+	- Maggi, Top Ramen, Yippee → Pantry
+	- Amul, Mother Dairy, Nandini → Dairy
 
-BEVERAGE BRANDS:
-- Coca Cola, Pepsi, Sprite, Fanta, Thums Up, Maaza, Frooti, Tropicana → Beverages
+	BEVERAGE BRANDS:
+	- Coca Cola, Pepsi, Sprite, Fanta, Thums Up, Maaza, Frooti, Tropicana → Beverages
 
-STATIONERY BRANDS:
-- Classmate, Camlin, Apsara, Reynolds, Cello → Stationery
+	STATIONERY BRANDS:
+	- Classmate, Camlin, Apsara, Reynolds, Cello → Stationery
 
-Examples by Item Type:
-- "Milk" → Dairy
-- "Tomato" → Produce
-- "Chicken Breast" → Meat
-- "Bread" → Bakery
-- "Rice" → Pantry
-- "Coca Cola" → Beverages
-- "Ice Cream" → Frozen
-- "Chips" → Snacks
-- "Detergent" → Household
-- "Shampoo" → Personal Care
-- "Pencil" → Stationery
-- "Dog Food" → Pet Supplies (new category)
-- "Baby Wipes" → Baby Care (new category)
-- "Light Bulb" → Electronics (new category)
+	Examples by Item Type:
+	- "Milk" → Dairy
+	- "Tomato" → Produce
+	- "Chicken Breast" → Meat
+	- "Bread" → Bakery
+	- "Rice" → Pantry
+	- "Coca Cola" → Beverages
+	- "Ice Cream" → Frozen
+	- "Chips" → Snacks
+	- "Detergent" → Household
+	- "Shampoo" → Personal Care
+	- "Pencil" → Stationery
+	- "Dog Food" → Pet Supplies (new category)
+	- "Baby Wipes" → Baby Care (new category)
+	- "Light Bulb" → Electronics (new category)
 
-Examples by Brand Name:
-- "Surf Excel" → Household
-- "Rin" → Household
-- "Idhayam Oil" → Pantry
-- "Mantra" → Pantry
-- "Fortune Rice Bran Oil" → Pantry
-- "Amul Butter" → Dairy
-- "Britannia Biscuits" → Snacks
-- "Classmate Notebook" → Stationery
-- "Dove Soap" → Personal Care
+	Examples by Brand Name:
+	- "Surf Excel" → Household
+	- "Rin" → Household
+	- "Idhayam Oil" → Pantry
+	- "Mantra" → Pantry
+	- "Fortune Rice Bran Oil" → Pantry
+	- "Amul Butter" → Dairy
+	- "Britannia Biscuits" → Snacks
+	- "Classmate Notebook" → Stationery
+	- "Dove Soap" → Personal Care
 
-Return ONLY the category name, nothing else.`;
+	Return ONLY the category name, nothing else.`;
 
 	try {
 		const apiResponse = await callGeminiAPI(prompt, model);
@@ -968,67 +1365,67 @@ export async function suggestGroceryItemDetails(
 
 	const prompt = `You are a grocery expert for Chennai, Tamil Nadu, India. Analyze the item and provide category, standard unit, package size, and current market price.
 
-ITEM NAME: "${itemName}"
+	ITEM NAME: "${itemName}"
 
-EXISTING CATEGORIES (prefer these if they fit):
-${availableCategories.join(', ')}
+	EXISTING CATEGORIES (prefer these if they fit):
+	${availableCategories.join(', ')}
 
-LOCATION: Chennai, Tamil Nadu, India
+	LOCATION: Chennai, Tamil Nadu, India
 
-INSTRUCTIONS:
-1. Suggest the most appropriate category (existing or new)
-2. Determine the standard unit of measurement for this item
-3. Determine the typical package size (e.g., "500ml", "1kg", "250g")
-4. Provide the current estimated market price in Chennai (in ₹) for that package size
-5. Return ONLY a valid JSON object
+	INSTRUCTIONS:
+	1. Suggest the most appropriate category (existing or new)
+	2. Determine the standard unit of measurement for this item
+	3. Determine the typical package size (e.g., "500ml", "1kg", "250g")
+	4. Provide the current estimated market price in Chennai (in ₹) for that package size
+	5. Return ONLY a valid JSON object
 
-UNIT GUIDELINES:
-- Liquids: L (litres), ml (millilitres)
-- Solids/Powders: kg (kilograms), g (grams)
-- Countable items: pcs (pieces), units, packets, bottles
+	UNIT GUIDELINES:
+	- Liquids: L (litres), ml (millilitres)
+	- Solids/Powders: kg (kilograms), g (grams)
+	- Countable items: pcs (pieces), units, packets, bottles
 
-PACKAGE SIZE EXAMPLES:
-- Milk → "500ml" or "1L"
-- Curd → "200g", "400g", or "500g"
-- Rice → "1kg", "5kg", or "10kg"
-- Sugar → "1kg" or "5kg"
-- Oil → "500ml", "1L", or "2L"
-- Biscuits → "100g", "200g", or "300g"
-- Detergent → "500g", "1kg", or "2kg"
+	PACKAGE SIZE EXAMPLES:
+	- Milk → "500ml" or "1L"
+	- Curd → "200g", "400g", or "500g"
+	- Rice → "1kg", "5kg", or "10kg"
+	- Sugar → "1kg" or "5kg"
+	- Oil → "500ml", "1L", or "2L"
+	- Biscuits → "100g", "200g", or "300g"
+	- Detergent → "500g", "1kg", or "2kg"
 
-PRICE GUIDELINES:
-- Use current 2024-2025 market prices for Chennai
-- Price should match the package size
-- Provide realistic retail prices
-- Include GST where applicable
+	PRICE GUIDELINES:
+	- Use current 2024-2025 market prices for Chennai
+	- Price should match the package size
+	- Provide realistic retail prices
+	- Include GST where applicable
 
-BRAND RECOGNITION:
-- Hatsun Curd (400g) → Dairy, g, "400g", ₹40
-- Surf Excel (1kg) → Household, kg, "1kg", ₹200
-- Idhayam Oil (1L) → Pantry, L, "1L", ₹190
-- Amul Milk (500ml) → Dairy, ml, "500ml", ₹30
-- Britannia Biscuits (100g) → Snacks, g, "100g", ₹25
-- Classmate Notebook → Stationery, pcs, "1pcs", ₹50
+	BRAND RECOGNITION:
+	- Hatsun Curd (400g) → Dairy, g, "400g", ₹40
+	- Surf Excel (1kg) → Household, kg, "1kg", ₹200
+	- Idhayam Oil (1L) → Pantry, L, "1L", ₹190
+	- Amul Milk (500ml) → Dairy, ml, "500ml", ₹30
+	- Britannia Biscuits (100g) → Snacks, g, "100g", ₹25
+	- Classmate Notebook → Stationery, pcs, "1pcs", ₹50
 
-COMMON ITEMS:
-- Milk → Dairy, ml, "500ml", ₹28
-- Rice → Pantry, kg, "1kg", ₹60
-- Tomato → Produce, kg, "1kg", ₹40
-- Chicken → Meat, kg, "1kg", ₹220
-- Bread → Bakery, pcs, "1pcs", ₹40
-- Sugar → Pantry, kg, "1kg", ₹50
-- Cooking Oil → Pantry, L, "1L", ₹180
-- Eggs → Dairy, pcs, "12pcs", ₹84
+	COMMON ITEMS:
+	- Milk → Dairy, ml, "500ml", ₹28
+	- Rice → Pantry, kg, "1kg", ₹60
+	- Tomato → Produce, kg, "1kg", ₹40
+	- Chicken → Meat, kg, "1kg", ₹220
+	- Bread → Bakery, pcs, "1pcs", ₹40
+	- Sugar → Pantry, kg, "1kg", ₹50
+	- Cooking Oil → Pantry, L, "1L", ₹180
+	- Eggs → Dairy, pcs, "12pcs", ₹84
 
-JSON FORMAT:
-{
-  "category": "category name",
-  "unit": "unit of measurement",
-  "packageSize": "package size with unit (e.g., 500ml, 1kg)",
-  "estimatedPrice": price in rupees for this package (number)
-}
+	JSON FORMAT:
+	{
+	"category": "category name",
+	"unit": "unit of measurement",
+	"packageSize": "package size with unit (e.g., 500ml, 1kg)",
+	"estimatedPrice": price in rupees for this package (number)
+	}
 
-Return ONLY the JSON object, no explanation.`;
+	Return ONLY the JSON object, no explanation.`;
 
 	try {
 		const apiResponse = await callGeminiAPI(prompt, model);
@@ -1048,6 +1445,129 @@ Return ONLY the JSON object, no explanation.`;
 			unit: 'units',
 			packageSize: '',
 			estimatedPrice: 0
+		};
+	}
+}
+
+/**
+ * Suggest investment details based on asset name
+ * Uses AI to provide comprehensive investment field suggestions
+ */
+export interface InvestmentSuggestion {
+	type: 'Stock' | 'Mutual Fund' | 'Crypto' | 'Gold' | 'Real Estate' | 'Bond' | 'ETF' | 'Other';
+	investedAmount: number;
+	currentValue: number;
+	notes: string;
+	confidence: 'high' | 'medium' | 'low';
+}
+
+export async function suggestInvestmentDetails(
+	assetName: string,
+	existingInvestments: Array<{ name: string; type: string; investedAmount?: number; currentValue?: number }>,
+	model: GeminiModel = GEMINI_MODELS.FLASH_LITE
+): Promise<InvestmentSuggestion> {
+	if (!assetName || assetName.trim().length === 0) {
+		return {
+			type: 'Other',
+			investedAmount: 0,
+			currentValue: 0,
+			notes: '',
+			confidence: 'low'
+		};
+	}
+
+	const similarInvestments = existingInvestments.filter(inv =>
+		inv.name.toLowerCase().includes(assetName.toLowerCase()) || 
+		assetName.toLowerCase().includes(inv.name.toLowerCase())
+	);
+
+	const prompt = `You are an investment advisor expert. Based on the asset name, suggest appropriate investment details for Indian investors.
+
+ASSET NAME: "${assetName}"
+
+${similarInvestments.length > 0 ? `SIMILAR INVESTMENTS IN PORTFOLIO:\n${similarInvestments.map(inv => `- ${inv.name} (${inv.type}): Invested: ₹${inv.investedAmount || 0}, Current: ₹${inv.currentValue || 0}`).join('\n')}\n` : ''}
+
+INVESTMENT TYPE CATEGORIES:
+- Stock: Individual company shares (e.g., Reliance, TCS, HDFC Bank, Apple, Tesla)
+- Mutual Fund: SIP/MF schemes (e.g., HDFC Top 100, SBI Bluechip, Axis Midcap)
+- Crypto: Cryptocurrencies (e.g., Bitcoin, Ethereum, Solana)
+- Gold: Physical gold, Sovereign Gold Bonds, Digital Gold (NOT Gold ETFs)
+- Real Estate: Property, Land, REITs
+- Bond: Government bonds, Corporate bonds, Tax-free bonds
+- ETF: Exchange Traded Funds including Gold ETFs (e.g., Nifty BeES, Bank BeES, UTI Gold ETF, Gold BeES)
+- Other: FD, PPF, NPS, or any other investment
+
+IMPORTANT CLASSIFICATION RULES:
+- If asset name contains "ETF" or "BeES" → classify as ETF (even if it's gold-related)
+- UTI Gold ETF, Gold BeES, SBI Gold ETF → these are ETF type, NOT Gold type
+- Sovereign Gold Bond, Physical Gold, Digital Gold → these are Gold type
+- Index funds tracking Nifty/Sensex → ETF type
+
+INSTRUCTIONS:
+1. Identify the investment type from the asset name (follow classification rules above)
+2. Suggest a reasonable invested amount in INR (typical investment sizes in India)
+3. Estimate current value (consider market trends, assume recent purchase if no history)
+4. Provide brief, helpful notes about the investment (1-2 sentences)
+5. Assess confidence level (high if clearly identifiable, medium if likely, low if uncertain)
+
+EXAMPLES:
+- "Reliance Industries" → Stock, ₹50,000 invested, ₹55,000 current (10% gain typical for blue chip), "Leading conglomerate with diverse portfolio"
+- "HDFC Top 100 Fund" → Mutual Fund, ₹100,000, ₹110,000, "Large cap mutual fund with consistent returns"
+- "Bitcoin" → Crypto, ₹25,000, ₹28,000, "Highly volatile cryptocurrency, invest cautiously"
+- "UTI Gold ETF" → ETF, ₹65,000, ₹67,000, "Gold ETF tracking gold prices, traded like stocks on NSE"
+- "Gold BeES" → ETF, ₹50,000, ₹52,000, "Nippon India Gold ETF, provides exposure to gold prices"
+- "Sovereign Gold Bond 2024" → Gold, ₹50,000, ₹52,000, "Government-backed gold investment with 2.5% interest"
+- "Physical Gold" → Gold, ₹75,000, ₹80,000, "Physical gold jewelry or coins"
+- "SBI FD" → Other, ₹100,000, ₹105,000, "Safe fixed deposit with guaranteed returns"
+- "Nifty BeES" → ETF, ₹50,000, ₹53,000, "Low-cost index fund tracking Nifty 50"
+
+AMOUNT GUIDELINES (Indian context):
+- Stocks: ₹10,000 - ₹100,000 (retail investors)
+- Mutual Funds: ₹50,000 - ₹500,000 (or monthly SIP)
+- Crypto: ₹5,000 - ₹50,000 (speculative, smaller amounts)
+- Gold: ₹25,000 - ₹200,000
+- Real Estate: ₹5,00,000 - ₹50,00,000+
+- Bonds: ₹50,000 - ₹500,000
+- ETF: ₹25,000 - ₹200,000
+
+CURRENT VALUE:
+- For stocks/MF: Add 5-15% gain for established investments
+- For crypto: Can be -20% to +50% (volatile)
+- For gold: Add 3-8% gain
+- For FD/Bonds: Add 5-7% based on tenure
+- If asset name suggests recent purchase, keep invested = current
+
+JSON FORMAT:
+{
+	"type": "Stock|Mutual Fund|Crypto|Gold|Real Estate|Bond|ETF|Other",
+	"investedAmount": <number in INR>,
+	"currentValue": <number in INR>,
+	"notes": "<brief helpful information about this investment>",
+	"confidence": "high|medium|low"
+}
+
+Return ONLY the JSON object, no explanation.`;
+
+	try {
+		const apiResponse = await callGeminiAPI(prompt, model);
+		const jsonText = apiResponse.text.trim().replace(/^```json\s*|\s*```$/g, '');
+		const parsed = JSON.parse(jsonText);
+
+		return {
+			type: parsed.type || 'Other',
+			investedAmount: parseFloat(parsed.investedAmount) || 0,
+			currentValue: parseFloat(parsed.currentValue) || 0,
+			notes: parsed.notes || '',
+			confidence: parsed.confidence || 'medium'
+		};
+	} catch (error) {
+		console.error('AI investment suggestion error:', error);
+		return {
+			type: 'Other',
+			investedAmount: 0,
+			currentValue: 0,
+			notes: 'Unable to determine investment details. Please enter manually.',
+			confidence: 'low'
 		};
 	}
 }
@@ -1082,40 +1602,40 @@ export async function getServiceAdvice(
 
 	const prompt = `You are an expert home service maintenance advisor. Help users manage their home services efficiently.
 
-SERVICE SUMMARY:
-- Total Services: ${services.length}
-- Total Cost (All Time): ₹${totalCost.toFixed(2)}
-- Overdue Services: ${overdueServices.length}
-- Upcoming (Next 30 Days): ${upcomingServices.length}
+	SERVICE SUMMARY:
+	- Total Services: ${services.length}
+	- Total Cost (All Time): ₹${totalCost.toFixed(2)}
+	- Overdue Services: ${overdueServices.length}
+	- Upcoming (Next 30 Days): ${upcomingServices.length}
 
-${overdueServices.length > 0 ? `OVERDUE SERVICES:\n${overdueServices.map(s => `- ${s.service_name} (Due: ${s.next_service_due})`).join('\n')}\n` : ''}
+	${overdueServices.length > 0 ? `OVERDUE SERVICES:\n${overdueServices.map(s => `- ${s.service_name} (Due: ${s.next_service_due})`).join('\n')}\n` : ''}
 
-${upcomingServices.length > 0 ? `UPCOMING SERVICES:\n${upcomingServices.map(s => `- ${s.service_name} (Due: ${s.next_service_due})`).join('\n')}\n` : ''}
+	${upcomingServices.length > 0 ? `UPCOMING SERVICES:\n${upcomingServices.map(s => `- ${s.service_name} (Due: ${s.next_service_due})`).join('\n')}\n` : ''}
 
-ALL SERVICES (Recent 20):
-${serviceList}
+	ALL SERVICES (Recent 20):
+	${serviceList}
 
-${conversationContext ? `CONVERSATION HISTORY:\n${conversationContext}\n` : ''}
+	${conversationContext ? `CONVERSATION HISTORY:\n${conversationContext}\n` : ''}
 
-USER QUESTION: ${userQuery}
+	USER QUESTION: ${userQuery}
 
-INSTRUCTIONS:
-1. Keep responses VERY SHORT and CRISP (max 100 words, 3-4 bullet points)
-2. Be direct and actionable - give specific advice with service names and dates
-3. Use simple language
-4. Reference specific services and costs from their data
-5. Use emojis sparingly (1-2 max)
-6. End EVERY response with "Follow-up questions:" followed by 3 relevant questions the USER might ask YOU next
+	INSTRUCTIONS:
+	1. Keep responses VERY SHORT and CRISP (max 100 words, 3-4 bullet points)
+	2. Be direct and actionable - give specific advice with service names and dates
+	3. Use simple language
+	4. Reference specific services and costs from their data
+	5. Use emojis sparingly (1-2 max)
+	6. End EVERY response with "Follow-up questions:" followed by 3 relevant questions the USER might ask YOU next
 
-FORMAT:
-[Brief answer in 2-3 bullet points]
+	FORMAT:
+	[Brief answer in 2-3 bullet points]
 
-Follow-up questions:
-- [What user would ask you - e.g., "Which service should I prioritize?"]
-- [What user would ask you - e.g., "How can I reduce my maintenance costs?"]
-- [What user would ask you - e.g., "When is my next service due?"]
+	Follow-up questions:
+	- [What user would ask you - e.g., "Which service should I prioritize?"]
+	- [What user would ask you - e.g., "How can I reduce my maintenance costs?"]
+	- [What user would ask you - e.g., "When is my next service due?"]
 
-Provide your response now:`;
+	Provide your response now:`;
 
 	try {
 		const response = await callGeminiAPI(prompt, model);
@@ -1150,30 +1670,30 @@ export async function generateServiceInsights(
 
 	const prompt = `You are an AI home service analyst. Analyze the service data and provide insights.
 
-SERVICES DATA:
-${JSON.stringify(servicesSummary, null, 2)}
+	SERVICES DATA:
+	${JSON.stringify(servicesSummary, null, 2)}
 
-Analyze the data and return a JSON object with the following structure:
-{
-  "overallHealth": <number 0-100>,
-  "costOptimization": [<array of 3-5 specific cost-saving tips>],
-  "maintenanceRecommendations": [<array of 3-5 maintenance recommendations>],
-  "upcomingPriorities": [<array of 3-5 priority services to focus on>],
-  "costForecast": [
-    {"month": "December 2025", "estimatedCost": <number>},
-    {"month": "January 2026", "estimatedCost": <number>},
-    {"month": "February 2026", "estimatedCost": <number>}
-  ]
-}
+	Analyze the data and return a JSON object with the following structure:
+	{
+	"overallHealth": <number 0-100>,
+	"costOptimization": [<array of 3-5 specific cost-saving tips>],
+	"maintenanceRecommendations": [<array of 3-5 maintenance recommendations>],
+	"upcomingPriorities": [<array of 3-5 priority services to focus on>],
+	"costForecast": [
+		{"month": "December 2025", "estimatedCost": <number>},
+		{"month": "January 2026", "estimatedCost": <number>},
+		{"month": "February 2026", "estimatedCost": <number>}
+	]
+	}
 
-ANALYSIS GUIDELINES:
-- overallHealth: 100 = all services up to date, 0 = critical maintenance issues
-- costOptimization: Specific actionable tips based on actual service patterns
-- maintenanceRecommendations: Prioritize overdue or upcoming services
-- upcomingPriorities: Services that need attention soon
-- costForecast: Predict next 3 months based on service schedules
+	ANALYSIS GUIDELINES:
+	- overallHealth: 100 = all services up to date, 0 = critical maintenance issues
+	- costOptimization: Specific actionable tips based on actual service patterns
+	- maintenanceRecommendations: Prioritize overdue or upcoming services
+	- upcomingPriorities: Services that need attention soon
+	- costForecast: Predict next 3 months based on service schedules
 
-Return ONLY the JSON object, no explanation.`;
+	Return ONLY the JSON object, no explanation.`;
 
 	try {
 		const response = await callGeminiAPI(prompt, model);
@@ -1218,30 +1738,30 @@ export async function suggestServiceDetails(
 
 	const prompt = `You are a home service expert. Suggest details for a new service entry.
 
-SERVICE TYPE: ${serviceType}
-SERVICE NAME: ${serviceName}
+	SERVICE TYPE: ${serviceType}
+	SERVICE NAME: ${serviceName}
 
-${similarServices.length > 0 ? `SIMILAR SERVICES:\n${similarServices.map(s => `- ${s.service_name}: Provider: ${s.service_provider || 'N/A'}, Cost: ₹${s.cost || 0}`).join('\n')}\n` : ''}
+	${similarServices.length > 0 ? `SIMILAR SERVICES:\n${similarServices.map(s => `- ${s.service_name}: Provider: ${s.service_provider || 'N/A'}, Cost: ₹${s.cost || 0}`).join('\n')}\n` : ''}
 
-Based on Indian market standards and the service type, suggest:
+	Based on Indian market standards and the service type, suggest:
 
-Return a JSON object:
-{
-  "suggestedProvider": "<typical service provider name or 'Urban Company' or 'Local Technician'>",
-  "suggestedCost": <typical cost in INR>,
-  "suggestedInterval": <months between services>,
-  "suggestedNotes": "<helpful maintenance tips in 1-2 sentences>"
-}
+	Return a JSON object:
+	{
+	"suggestedProvider": "<typical service provider name or 'Urban Company' or 'Local Technician'>",
+	"suggestedCost": <typical cost in INR>,
+	"suggestedInterval": <months between services>,
+	"suggestedNotes": "<helpful maintenance tips in 1-2 sentences>"
+	}
 
-GUIDELINES:
-- AC: 3-6 months interval, ₹300-800
-- Water Purifier: 3-6 months, ₹500-1500
-- Geyser: 12 months, ₹500-1000
-- Car Service: 6 months, ₹2000-5000
-- Bike Service: 3-6 months, ₹500-2000
-- Pest Control: 3-6 months, ₹1000-3000
+	GUIDELINES:
+	- AC: 3-6 months interval, ₹300-800
+	- Water Purifier: 3-6 months, ₹500-1500
+	- Geyser: 12 months, ₹500-1000
+	- Car Service: 6 months, ₹2000-5000
+	- Bike Service: 3-6 months, ₹500-2000
+	- Pest Control: 3-6 months, ₹1000-3000
 
-Return ONLY the JSON object.`;
+	Return ONLY the JSON object.`;
 
 	try {
 		const response = await callGeminiAPI(prompt, model);
@@ -1269,7 +1789,8 @@ export async function detectServiceTypeAndSuggest(
 	serviceName: string,
 	existingServices: HomeService[],
 	existingServiceTypes: string[],
-	lastServiceDate?: string
+	lastServiceDate?: string,
+	model: GeminiModel = GEMINI_MODELS.FLASH_LITE
 ): Promise<{
 	detectedServiceType: string;
 	suggestedProvider: string;
@@ -1281,46 +1802,46 @@ export async function detectServiceTypeAndSuggest(
 }> {
 	const prompt = `You are an expert in home appliances and services. Analyze the service name/brand and detect what type of service it is.
 
-SERVICE NAME/BRAND: "${serviceName}"
+	SERVICE NAME/BRAND: "${serviceName}"
 
-EXISTING SERVICE TYPES IN SYSTEM: ${existingServiceTypes.length > 0 ? existingServiceTypes.join(', ') : 'AC, Water Purifier, Geyser, Chimney, Washing Machine, Refrigerator, Car Service, Bike Service, Electricals, Plumbing, Painting, Pest Control'}
+	EXISTING SERVICE TYPES IN SYSTEM: ${existingServiceTypes.length > 0 ? existingServiceTypes.join(', ') : 'AC, Water Purifier, Geyser, Chimney, Washing Machine, Refrigerator, Car Service, Bike Service, Electricals, Plumbing, Painting, Pest Control'}
 
-${existingServices.length > 0 ? `\nEXISTING SERVICES FOR REFERENCE:\n${existingServices.slice(0, 10).map(s => `- ${s.service_name} (${s.service_type}): ₹${s.cost || 0}, Provider: ${s.service_provider || 'N/A'}`).join('\n')}` : ''}
+	${existingServices.length > 0 ? `\nEXISTING SERVICES FOR REFERENCE:\n${existingServices.slice(0, 10).map(s => `- ${s.service_name} (${s.service_type}): ₹${s.cost || 0}, Provider: ${s.service_provider || 'N/A'}`).join('\n')}` : ''}
 
-BRAND NAME EXAMPLES:
-- Aquaguard, Kent, Pureit → Water Purifier
-- Voltas, Daikin, LG, Samsung AC → AC
-- Whirlpool, IFB, Samsung Washing Machine → Washing Machine
-- Maruti, Honda, Hyundai → Car Service
-- Hero, Bajaj, TVS → Bike Service
-- Elica, Faber, Glen → Chimney
-- Racold, AO Smith → Geyser
+	BRAND NAME EXAMPLES:
+	- Aquaguard, Kent, Pureit → Water Purifier
+	- Voltas, Daikin, LG, Samsung AC → AC
+	- Whirlpool, IFB, Samsung Washing Machine → Washing Machine
+	- Maruti, Honda, Hyundai → Car Service
+	- Hero, Bajaj, TVS → Bike Service
+	- Elica, Faber, Glen → Chimney
+	- Racold, AO Smith → Geyser
 
-${lastServiceDate ? `LAST SERVICE DATE: ${lastServiceDate}` : 'LAST SERVICE DATE: Not provided (assume today)'}
+	${lastServiceDate ? `LAST SERVICE DATE: ${lastServiceDate}` : 'LAST SERVICE DATE: Not provided (assume today)'}
 
-Analyze the service name and:
-1. Detect the most appropriate service type (use existing types if match, or suggest a new specific type)
-2. Suggest typical service provider in India
-3. Estimate typical service cost in INR
-4. Recommend service interval in months
-5. Calculate next service date based on last service date and interval
-6. Provide maintenance tips
+	Analyze the service name and:
+	1. Detect the most appropriate service type (use existing types if match, or suggest a new specific type)
+	2. Suggest typical service provider in India
+	3. Estimate typical service cost in INR
+	4. Recommend service interval in months
+	5. Calculate next service date based on last service date and interval
+	6. Provide maintenance tips
 
-Return ONLY a valid JSON object:
-{
-  "detectedServiceType": "<specific service type>",
-  "suggestedProvider": "<typical provider name>",
-  "suggestedCost": <number in INR>,
-  "suggestedIntervalMonths": <number of months>,
-  "suggestedNextServiceDate": "<YYYY-MM-DD format>",
-  "suggestedNotes": "<helpful tips>",
-  "confidence": "<high|medium|low>"
-}
+	Return ONLY a valid JSON object:
+	{
+	"detectedServiceType": "<specific service type>",
+	"suggestedProvider": "<typical provider name>",
+	"suggestedCost": <number in INR>,
+	"suggestedIntervalMonths": <number of months>,
+	"suggestedNextServiceDate": "<YYYY-MM-DD format>",
+	"suggestedNotes": "<helpful tips>",
+	"confidence": "<high|medium|low>"
+	}
 
-Be specific with service types. For example: "Split AC", "Front Load Washing Machine", "RO Water Purifier" instead of just "AC", "Washing Machine", "Water Purifier".`;
+	Be specific with service types. For example: "Split AC", "Front Load Washing Machine", "RO Water Purifier" instead of just "AC", "Washing Machine", "Water Purifier".`;
 
 	try {
-		const result = await callGeminiAPI(prompt, GEMINI_MODELS.FLASH_LITE);
+		const result = await callGeminiAPI(prompt, model);
 
 		// Parse the JSON response
 		const jsonMatch = result.text.match(/\{[\s\S]*\}/);
@@ -1425,50 +1946,50 @@ export async function suggestCategoryBudget(
 
 	const prompt = `You are a financial advisor helping users set realistic budgets. Analyze the spending data and suggest an optimal monthly budget.
 
-CATEGORY: ${category}
-YEAR: ${selectedYear === 'All' ? 'All Years' : selectedYear}
+	CATEGORY: ${category}
+	YEAR: ${selectedYear === 'All' ? 'All Years' : selectedYear}
 
-SPENDING STATISTICS:
-- Total Transactions: ${categoryTransactions.length}
-- Total Spent: ₹${totalSpent.toFixed(2)}
-- Average per Transaction: ₹${avgSpending.toFixed(2)}
-- Average Monthly Spending: ₹${avgMonthlySpending.toFixed(2)}
-- Highest Transaction: ₹${maxSpending.toFixed(2)}
-- Lowest Transaction: ₹${minSpending.toFixed(2)}
-- Number of Months with Data: ${monthlyAmounts.length}
+	SPENDING STATISTICS:
+	- Total Transactions: ${categoryTransactions.length}
+	- Total Spent: ₹${totalSpent.toFixed(2)}
+	- Average per Transaction: ₹${avgSpending.toFixed(2)}
+	- Average Monthly Spending: ₹${avgMonthlySpending.toFixed(2)}
+	- Highest Transaction: ₹${maxSpending.toFixed(2)}
+	- Lowest Transaction: ₹${minSpending.toFixed(2)}
+	- Number of Months with Data: ${monthlyAmounts.length}
 
-MONTHLY BREAKDOWN:
-${Object.entries(monthlySpending)
+	MONTHLY BREAKDOWN:
+	${Object.entries(monthlySpending)
 			.sort(([a], [b]) => b.localeCompare(a))
 			.slice(0, 12)
 			.map(([month, amount]) => `- ${month}: ₹${amount.toFixed(2)}`)
 			.join('\n')}
 
-INSTRUCTIONS:
-1. Suggest a realistic monthly budget that accounts for:
-   - Historical spending patterns
-   - Seasonal variations (if any)
-   - Room for unexpected expenses (10-20% buffer)
-   - Encouraging responsible spending
-2. Provide clear reasoning for your suggestion
-3. Rate your confidence (high/medium/low) based on data quality
-4. Keep reasoning concise (2-3 sentences max)
-5. Return ONLY valid JSON in this exact format:
+	INSTRUCTIONS:
+	1. Suggest a realistic monthly budget that accounts for:
+	- Historical spending patterns
+	- Seasonal variations (if any)
+	- Room for unexpected expenses (10-20% buffer)
+	- Encouraging responsible spending
+	2. Provide clear reasoning for your suggestion
+	3. Rate your confidence (high/medium/low) based on data quality
+	4. Keep reasoning concise (2-3 sentences max)
+	5. Return ONLY valid JSON in this exact format:
 
-{
-  "suggestedBudget": <number>,
-  "reasoning": "<string>",
-  "confidence": "<high|medium|low>"
-}
+	{
+	"suggestedBudget": <number>,
+	"reasoning": "<string>",
+	"confidence": "<high|medium|low>"
+	}
 
-GUIDELINES:
-- If data shows consistent spending, suggest average + 15% buffer
-- If data is volatile, suggest 80th percentile + 20% buffer
-- If limited data (< 3 months), suggest average + 25% buffer and mark confidence as low
-- Round to nearest 100 for amounts > 1000, nearest 50 for amounts < 1000
-- Ensure budget is practical and not too restrictive
+	GUIDELINES:
+	- If data shows consistent spending, suggest average + 15% buffer
+	- If data is volatile, suggest 80th percentile + 20% buffer
+	- If limited data (< 3 months), suggest average + 25% buffer and mark confidence as low
+	- Round to nearest 100 for amounts > 1000, nearest 50 for amounts < 1000
+	- Ensure budget is practical and not too restrictive
 
-Return ONLY the JSON object, no markdown or extra text.`;
+	Return ONLY the JSON object, no markdown or extra text.`;
 
 	try {
 		const apiResponse = await callGeminiAPI(prompt, model);

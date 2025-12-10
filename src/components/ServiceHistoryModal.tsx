@@ -14,7 +14,7 @@ interface ServiceHistoryModalProps {
 }
 
 export function ServiceHistoryModal({ isOpen, onClose, serviceId, serviceName, userId, currentService }: ServiceHistoryModalProps) {
-    const { history, statistics, isLoading, addHistory, deleteHistory, isAdding, isDeletingHistory } = useServiceHistory(serviceId);
+    const { history: rawHistory, statistics, isLoading, addHistory, deleteHistory, isAdding, isDeletingHistory } = useServiceHistory(serviceId);
     const [isAddingNew, setIsAddingNew] = useState(false);
     const [formData, setFormData] = useState({
         service_date: new Date().toISOString().split('T')[0],
@@ -26,6 +26,16 @@ export function ServiceHistoryModal({ isOpen, onClose, serviceId, serviceName, u
     });
 
     if (!isOpen) return null;
+
+    // Filter out auto-created initial history record that matches current service date
+    // The DB trigger creates a history record when a service is added, but we show the current service separately
+    const history = React.useMemo(() => {
+        if (!currentService) return rawHistory;
+
+        // Filter out any history record that has the same date as the current service
+        // These are auto-created by the trigger and would be duplicates
+        return rawHistory.filter(record => record.service_date !== currentService.last_service_date);
+    }, [rawHistory, currentService]);
 
     // Calculate statistics including current service
     const computedStats = React.useMemo(() => {

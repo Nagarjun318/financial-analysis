@@ -4,6 +4,7 @@ import SetupInstructions from './components/SetupInstructions.tsx';
 import { Session } from '@supabase/supabase-js';
 import Sidebar from './components/Sidebar.tsx';
 import HomePage from './components/HomePage.tsx';
+// import DocumentsPage from './components/DocumentsPage.tsx';
 import AboutPage from './components/AboutPage.tsx';
 import ServicesPage from './components/ServicesPage.tsx';
 import InvestmentPage from './components/InvestmentPage.tsx';
@@ -14,10 +15,12 @@ import Auth from './components/Auth';
 import Dashboard from './components/Dashboard';
 import StagingModal from './components/StagingModal';
 import EditTransactionModal from './components/EditTransactionModal';
+import { AnalyticsPage } from './components/AnalyticsPage';
 import { Transaction, AnalysisResult } from './types';
 import { processXlsData, analyzeTransactions, getCategory } from './utils';
 import { useTransactions } from './hooks/useTransactions.ts';
 import { makeTransactionKey, filterDuplicateStaged } from './domain/transactions/dedupe.ts';
+import DocumentsPage from './components/DocumentsPage.tsx';
 
 const emptyAnalysisResult: AnalysisResult = {
   summary: { totalIncome: 0, totalExpenses: 0, netSavings: 0 },
@@ -31,7 +34,7 @@ const App: React.FC = () => {
   const [loading, setLoading] = React.useState(true);
   const [isUploading, setIsUploading] = React.useState(false);
   const [error, setError] = React.useState(null as string | null);
-  const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
 
   // Staging transactions from file upload
   const [stagedTransactions, setStagedTransactions] = React.useState([] as Transaction[]);
@@ -198,29 +201,39 @@ const App: React.FC = () => {
   const handleSignOut = async () => {
     setError(null);
     try {
-      if (supabase) {
-        // Try standard global scope signout first
-        const { error: signOutErr } = await supabase.auth.signOut({ scope: 'global' } as any);
-        if (signOutErr) {
-          // Fallback: basic signOut (some versions expect no args)
-          const { error: fallbackErr } = await (supabase.auth as any).signOut();
-          if (fallbackErr) {
-            // As last resort, clear local storage tokens manually
-            try {
-              Object.keys(localStorage)
-                .filter(k => k.toLowerCase().includes('supabase'))
-                .forEach(k => localStorage.removeItem(k));
-            } catch { }
-            setError('Sign out encountered an auth 403. Local session cleared locally.');
+      // Clear Supabase session from all storage locations manually
+      // This avoids 403 errors from the signOut API
+      if (typeof window !== 'undefined') {
+        // Clear from localStorage
+        Object.keys(localStorage)
+          .filter(k => k.toLowerCase().includes('supabase'))
+          .forEach(k => localStorage.removeItem(k));
+
+        // Clear from sessionStorage
+        Object.keys(sessionStorage)
+          .filter(k => k.toLowerCase().includes('supabase'))
+          .forEach(k => sessionStorage.removeItem(k));
+
+        // Clear Supabase cookies
+        document.cookie.split(';').forEach(cookie => {
+          const cookieName = cookie.split('=')[0].trim();
+          if (cookieName.toLowerCase().includes('supabase') || cookieName.includes('sb-')) {
+            document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+            document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname};`;
           }
-        }
+        });
       }
+
+      // Clear application state
       setSession(null);
       setAnalysisResult(emptyAnalysisResult);
+      setCurrentSection('home');
     } catch (e: any) {
-      console.error('[signout] unexpected error', e);
-      setError(e.message || 'Unexpected sign out error');
+      console.warn('[signout]', e);
+      // Ensure session is cleared even if there's an error
       setSession(null);
+      setAnalysisResult(emptyAnalysisResult);
+      setCurrentSection('home');
     }
   };
 
@@ -228,7 +241,8 @@ const App: React.FC = () => {
     return <SetupInstructions />;
   }
 
-  if (!session) {
+  // Show Auth page only if user explicitly navigates to it
+  if (currentSection === 'auth' && !session) {
     return <Auth />;
   }
 
@@ -237,8 +251,8 @@ const App: React.FC = () => {
       <Sidebar
         currentSection={currentSection}
         onSectionChange={setCurrentSection}
-        userEmail={session.user?.email}
-        onSignOut={handleSignOut}
+        userEmail={session?.user?.email}
+        onSignOut={session ? handleSignOut : undefined}
         isOpen={isSidebarOpen}
         onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
       />
@@ -247,14 +261,34 @@ const App: React.FC = () => {
         <main className="container mx-auto p-4 sm:p-6 lg:p-8">
           {loading ? (
             <div className="flex justify-center items-center h-[60vh]">
-              <p className="text-lg font-medium text-gray-600 dark:text-gray-300 animate-pulse">Loading transactions...</p>
+              <p className="text-lg font-medium text-gray-600 dark:text-gray-300 animate-pulse">
+                {currentSection === 'finance'
+                  ? 'Loading transactions...'
+                  : currentSection === 'home'
+                    ? 'Loading your dashboard...'
+                    : currentSection === 'about'
+                      ? 'Loading about page...'
+                      : currentSection === 'services'
+                        ? 'Loading services...'
+                        : currentSection === 'investment'
+                          ? 'Loading investment data...'
+                          : currentSection === 'groceries'
+                            ? 'Loading groceries...'
+                            : currentSection === 'networth'
+                              ? 'Loading net worth overview...'
+                              : currentSection === 'goals'
+                                ? 'Loading goals...'
+                                : currentSection === 'analytics'
+                                  ? 'Loading analytics...'
+                                  : 'Loading...'}
+              </p>
             </div>
           ) : (
             <>
               <div className="container mx-auto px-4 py-8">
                 {currentSection === 'home' && <HomePage />}
                 {currentSection === 'about' && <AboutPage />}
-                {currentSection === 'services' && <ServicesPage />}
+                {currentSection === 'services' && <ServicesPage userId={session?.user?.id} />}
                 {currentSection === 'finance' && (
                   <Dashboard
                     analysisResult={analysisResult}
@@ -263,23 +297,31 @@ const App: React.FC = () => {
                     onEditTransaction={handleEditTransaction}
                     onDeleteTransaction={handleDeleteTransaction}
                     onRefreshData={refetch}
-                    userId={session.user.id}
+                    userId={session?.user?.id || ''}
+                    isLoggedIn={!!session}
                   />
                 )}
-                {currentSection === 'investment' && <InvestmentPage />}
-                {currentSection === 'groceries' && <GroceriesPage userId={session.user.id} />}
+                {currentSection === 'investment' && <InvestmentPage userId={session?.user?.id} />}
+                {currentSection === 'groceries' && <GroceriesPage userId={session?.user?.id} />}
                 {currentSection === 'networth' && (
                   <NetWorthPage
                     transactions={analysisResult.transactions}
-                    userId={session.user.id}
+                    userId={session?.user?.id}
                   />
                 )}
                 {currentSection === 'goals' && (
                   <GoalsPage
-                    userId={session.user.id}
+                    userId={session?.user?.id}
                     transactions={analysisResult.transactions}
                   />
                 )}
+                {currentSection === 'analytics' && (
+                  <AnalyticsPage
+                    transactions={analysisResult.transactions}
+                    userId={session?.user?.id}
+                  />
+                )}
+                {currentSection === 'documents' && <DocumentsPage session={session} />}
               </div>
             </>
           )}

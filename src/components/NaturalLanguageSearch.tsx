@@ -31,6 +31,7 @@ const NaturalLanguageSearch: React.FC<NaturalLanguageSearchProps> = ({
       [GEMINI_MODELS.FLASH_2_0]: 'Flash 2.0',
       [GEMINI_MODELS.FLASH_LITE]: 'Flash Lite',
       [GEMINI_MODELS.FLASH_2_5]: 'Flash 2.5',
+      [GEMINI_MODELS.GEMMA_3]: 'Gemma 3',
     };
     return names[model] || 'Pro';
   };
@@ -53,6 +54,31 @@ const NaturalLanguageSearch: React.FC<NaturalLanguageSearchProps> = ({
       }
       
       onSearchResults(result.transactions, query);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Search failed');
+      console.error('Natural language search error:', err);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const runSearch = async (q: string) => {
+    if (!q.trim()) return;
+    setQuery(q);
+    setIsSearching(true);
+    setError('');
+    setFallbackAlert('');
+
+    try {
+      const result = await searchTransactionsWithAI(q, allTransactions, selectedModel);
+      setActiveSearch(q);
+      setSearchResult(result);
+
+      if (result.usedFallback) {
+        setFallbackAlert(`⚠️ ${result.fallbackReason} on ${getModelDisplayName(selectedModel)} model. Automatically switched to ${getModelDisplayName(GEMINI_MODELS.FLASH_LATEST)} model.`);
+      }
+
+      onSearchResults(result.transactions, q);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Search failed');
       console.error('Natural language search error:', err);
@@ -189,15 +215,27 @@ const NaturalLanguageSearch: React.FC<NaturalLanguageSearchProps> = ({
         </div>
       )}
 
-      <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1">
+      <div className="text-xs text-gray-500 dark:text-gray-400 space-y-2">
         <p className="font-semibold">Try asking:</p>
-        <ul className="list-disc list-inside space-y-0.5 ml-2">
-          <li>"Show all shopping expenses over ₹5000"</li>
-          <li>"What did I spend on groceries in October?"</li>
-          <li>"Find all UPI transactions from last month"</li>
-          <li>"Generate a chart for my top 10 expenses in 2025"</li>
-          <li>"Show pie chart of expenses by category"</li>
-        </ul>
+        <div className="flex flex-wrap gap-2">
+          {[
+            'Show all shopping expenses over ₹5000',
+            'What did I spend on groceries in October?',
+            'Find all UPI transactions from last month',
+            'Generate a chart for my top 10 expenses in 2025',
+            'Show pie chart of expenses by category'
+          ].map((sugg) => (
+            <button
+              key={sugg}
+              type="button"
+              onClick={() => runSearch(sugg)}
+              disabled={isSearching}
+              className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md text-gray-700 dark:text-gray-200 transition"
+            >
+              {sugg}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* AI Generated Chart */}

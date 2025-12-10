@@ -39,6 +39,8 @@ const StagingModal: React.FC<StagingModalProps> = ({
 
     setIsPredicting(true);
     try {
+      console.log(`Starting AI category prediction for ${transactions.length} transactions...`);
+      
       // Prepare transactions for API (needs id, description, amount)
       // We use index as temporary ID since these aren't in DB yet
       const transactionsForAI = transactions.map((t, idx) => ({
@@ -48,6 +50,7 @@ const StagingModal: React.FC<StagingModalProps> = ({
       }));
 
       const predictions = await predictTransactionCategoriesBatch(transactionsForAI);
+      console.log(`Received ${predictions.length} predictions`);
 
       // Update transactions with new AI categories
       const updatedTransactions = transactions.map((t, idx) => {
@@ -59,9 +62,13 @@ const StagingModal: React.FC<StagingModalProps> = ({
       });
 
       onTransactionsUpdate(updatedTransactions);
+      console.log('Successfully updated transactions with AI predictions');
     } catch (error) {
       console.error('Failed to predict categories:', error);
-      // You might want to show an error toast here
+      
+      // Show user-friendly error message
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      alert(`AI category prediction failed: ${errorMessage}\n\nTransactions will keep their current categories. Check console for details.`);
     } finally {
       setIsPredicting(false);
     }

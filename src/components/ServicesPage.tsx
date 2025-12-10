@@ -1,21 +1,29 @@
 import React from 'react';
-import { Plus, Edit2, Trash2, Calendar, IndianRupee, AlertCircle, CheckCircle, Clock, Sparkles, History } from 'lucide-react';
+import { Plus, Edit2, Trash2, Calendar, IndianRupee, AlertCircle, CheckCircle, Clock, Sparkles, History, Settings } from 'lucide-react';
 import { useHomeServices } from '../hooks/useHomeServices';
 import { HomeService } from '../types';
 import { supabase } from '../services/supabaseClient';
 import { ServiceAdvisorChat } from './ServiceAdvisorChat';
 import { ServiceInsightsDashboard } from './ServiceInsightsDashboard';
 import { ServiceHistoryModal } from './ServiceHistoryModal';
-import { detectServiceTypeAndSuggest } from '../services/geminiService';
+import { detectServiceTypeAndSuggest, GEMINI_MODELS, GeminiModel } from '../services/geminiService';
 
-const ServicesPage: React.FC = () => {
+interface ServicesPageProps {
+  userId?: string;
+}
+
+const ServicesPage: React.FC<ServicesPageProps> = ({ userId: propUserId }) => {
   const [chatPanelWidth, setChatPanelWidth] = React.useState(0);
-  const [session, setSession] = React.useState(null as any);
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [editingService, setEditingService] = React.useState(null as HomeService | null);
   const [selectedServiceType, setSelectedServiceType] = React.useState(null as string | null);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = React.useState(false);
   const [historyModalService, setHistoryModalService] = React.useState<{ id: number; name: string } | null>(null);
+  const [selectedModel, setSelectedModel] = React.useState<GeminiModel>(GEMINI_MODELS.FLASH_LITE);
+  const [showModelSelector, setShowModelSelector] = React.useState(false);
+
+  const modelSelectorRef = React.useRef<HTMLDivElement>(null);
+
   const [formData, setFormData] = React.useState({
     service_name: '',
     service_type: '',
@@ -27,14 +35,7 @@ const ServicesPage: React.FC = () => {
     notes: '',
   });
 
-  React.useEffect(() => {
-    if (!supabase) return;
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-    });
-  }, []);
-
-  const userId = session?.user?.id;
+  const userId = propUserId;
   const {
     services,
     isLoading,
@@ -172,7 +173,8 @@ const ServicesPage: React.FC = () => {
           formData.service_name,
           services,
           existingServiceTypes,
-          formData.last_service_date || undefined
+          formData.last_service_date || undefined,
+          selectedModel
         );
 
         if (suggestions) {
@@ -197,9 +199,34 @@ const ServicesPage: React.FC = () => {
     return () => clearTimeout(timeoutId);
   }, [formData.service_name, formData.last_service_date]);
 
+  // Click outside to close model selector
+  React.useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (modelSelectorRef.current && !modelSelectorRef.current.contains(event.target as Node)) {
+        setShowModelSelector(false);
+      }
+    };
+
+    if (showModelSelector) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showModelSelector]);
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'Asia/Kolkata' });
+  };
+
+  const getModelDisplayName = (model: GeminiModel): string => {
+    switch (model) {
+      case GEMINI_MODELS.PRO_LATEST: return 'Pro';
+      case GEMINI_MODELS.FLASH_LATEST: return 'Flash';
+      case GEMINI_MODELS.FLASH_2_0: return 'Flash 2.0';
+      case GEMINI_MODELS.FLASH_LITE: return 'Flash Lite';
+      case GEMINI_MODELS.GEMMA_3: return 'Gemma 3';
+      default: return 'Flash Lite';
+    }
   };
 
   const formatCurrency = (amount: number | null | undefined) => {
@@ -459,9 +486,46 @@ const ServicesPage: React.FC = () => {
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="glass-panel p-6 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <h2 className="text-2xl font-bold gradient-text mb-6">
-              {editingService ? 'Edit Service' : 'Add New Service'}
-            </h2>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold gradient-text">
+                {editingService ? 'Edit Service' : 'Add New Service'}
+              </h2>
+              {/* Model Selector */}
+              {!editingService && (
+                <div className="relative" ref={modelSelectorRef}>
+                  <button
+                    type="button"
+                    onClick={() => setShowModelSelector(!showModelSelector)}
+                    className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                    title={`AI Model: ${getModelDisplayName(selectedModel)}`}
+                  >
+                    <Settings className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+                  </button>
+
+                  {showModelSelector && (
+                    <div className="absolute top-full right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 py-1 z-50">
+                      {Object.values(GEMINI_MODELS).map((model) => (
+                        <button
+                          key={model}
+                          type="button"
+                          onClick={() => {
+                            setSelectedModel(model);
+                            setShowModelSelector(false);
+                          }}
+                          className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors ${
+                            selectedModel === model
+                              ? 'text-brand-primary font-medium bg-brand-primary/5'
+                              : 'text-gray-700 dark:text-gray-300'
+                          }`}
+                        >
+                          {getModelDisplayName(model)}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
