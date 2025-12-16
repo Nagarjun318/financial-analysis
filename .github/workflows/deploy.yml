@@ -31,6 +31,7 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           VITE_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          VITE_INDIAN_API_KEY: ${{ secrets.INDIAN_API_KEY }}
         run: |
           echo "Building with injected Supabase env vars"
           npm run build
