@@ -6,6 +6,7 @@ import ForecastSummary from './ForecastSummary.tsx';
 import CategoryChart from './CategoryChart.tsx';
 import TransactionList from './TransactionList.tsx';
 import MonthlySummaryTable from './MonthlySummaryTable.tsx';
+import CategoryWiseMonthlyTable from './CategoryWiseMonthlyTable.tsx';
 import TrendsChart from './TrendsChart.tsx';
 import NaturalLanguageSearch from './NaturalLanguageSearch.tsx';
 import { FinancialAdvisorChat } from './FinancialAdvisorChat.tsx';
@@ -672,6 +673,8 @@ const Dashboard: React.FC<DashboardProps> = ({
       </div>
 
       <MonthlySummaryTable userId={userId} transactions={allTransactions} onCellClick={handleMonthlyCellClick} onFiltersChange={handleSummaryFiltersChange} />
+
+      <CategoryWiseMonthlyTable transactions={allTransactions} monthYear={filters.monthYear} />
 
       {/* Natural Language AI Search */}
       <NaturalLanguageSearch

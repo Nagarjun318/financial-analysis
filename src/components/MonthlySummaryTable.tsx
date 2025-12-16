@@ -263,8 +263,8 @@ const MonthlySummaryTable: React.FC<MonthlySummaryTableProps> = ({ userId, trans
                     <thead className="sticky top-0 z-10 bg-light-bg dark:bg-dark-bg shadow-sm">
                         <tr>
                             <th className="px-3 py-2 font-semibold text-left">Date - Year-Month</th>
-                            <th className="px-3 py-2 font-semibold text-right text-green-700 dark:text-green-300">REVENUE</th>
                             <th className="px-3 py-2 font-semibold text-right text-red-700 dark:text-red-300">EXPENSE</th>
+                            <th className="px-3 py-2 font-semibold text-right text-green-700 dark:text-green-300">REVENUE</th>
                             <th className="px-3 py-2 font-semibold text-right text-emerald-700 dark:text-emerald-300">SAVINGS</th>
                             <th className="px-3 py-2 font-semibold text-right">Expense Ratio</th>
                             <th className="px-3 py-2 font-semibold text-right">Savings Ratio</th>
@@ -300,17 +300,17 @@ const MonthlySummaryTable: React.FC<MonthlySummaryTableProps> = ({ userId, trans
                                     </td>
                                     <td
                                         className="px-3 py-2 text-right font-mono cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                                        onClick={() => onCellClick(row.key, 'credit', selectedCategory)}
-                                        title={`Filter revenue for ${row.month}`}
-                                    >
-                                        {formatCurrency(row.revenue)}
-                                    </td>
-                                    <td
-                                        className="px-3 py-2 text-right font-mono cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                                         onClick={() => onCellClick(row.key, 'debit', selectedCategory)}
                                         title={`Filter expenses for ${row.month}`}
                                     >
                                         {formatCurrency(row.expense)}
+                                    </td>
+                                    <td
+                                        className="px-3 py-2 text-right font-mono cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                        onClick={() => onCellClick(row.key, 'credit', selectedCategory)}
+                                        title={`Filter revenue for ${row.month}`}
+                                    >
+                                        {formatCurrency(row.revenue)}
                                     </td>
                                     <td className={`px-3 py-2 text-right font-mono font-semibold ${savingsClasses}`}>{formatCurrency(row.savings)}</td>
                                     <td className={`px-3 py-2 text-right font-mono ${expenseRatioClasses}`}>{(row.expenseRatio * 100).toFixed(2)}%</td>
@@ -330,8 +330,8 @@ const MonthlySummaryTable: React.FC<MonthlySummaryTableProps> = ({ userId, trans
                     <tfoot className="sticky bottom-0 z-10 bg-light-bg dark:bg-dark-bg shadow-inner">
                         <tr>
                             <td className="px-3 py-2 font-semibold text-left">Totals</td>
-                            <td className="px-3 py-2 font-mono text-right text-green-700 dark:text-green-300">{formatCurrency(grandTotal.revenue)}</td>
                             <td className="px-3 py-2 font-mono text-right text-red-700 dark:text-red-300">{formatCurrency(grandTotal.expense)}</td>
+                            <td className="px-3 py-2 font-mono text-right text-green-700 dark:text-green-300">{formatCurrency(grandTotal.revenue)}</td>
                             <td className={`px-3 py-2 font-mono text-right font-semibold ${grandTotal.savings >= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-700 dark:text-red-300'}`}>{formatCurrency(grandTotal.savings)}</td>
                             <td className="px-3 py-2" colSpan={selectedCategory !== 'All' ? (selectedCategory !== 'All' ? 5 : 3) : 3}></td>
                         </tr>
