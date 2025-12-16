@@ -51,7 +51,7 @@ export async function getWeatherData(location: string = 'Mumbai, India'): Promis
     } else {
       // Location is city name - need to geocode first
       console.log('[WeatherService] Geocoding location:', location);
-      const geocodeUrl = `/api/geocode/json?address=${encodeURIComponent(location)}&key=${apiKey}`;
+      const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(location)}&key=${apiKey}`;
       const geocodeResponse = await fetch(geocodeUrl);
       const geocodeData = await geocodeResponse.json();
       
@@ -68,8 +68,8 @@ export async function getWeatherData(location: string = 'Mumbai, India'): Promis
     console.log('[WeatherService] Fetching weather for coordinates:', { lat, lon });
 
     // Fetch current weather using correct Google Weather API endpoint
-    const weatherUrl = `/api/currentConditions?key=${apiKey}&location.latitude=${lat}&location.longitude=${lon}`;
-    console.log('[WeatherService] Weather API URL (without key):', `/api/currentConditions?location.latitude=${lat}&location.longitude=${lon}`);
+    const weatherUrl = `https://weather.googleapis.com/v1/currentConditions:lookup?key=${apiKey}&location.latitude=${lat}&location.longitude=${lon}`;
+    console.log('[WeatherService] Weather API URL (without key):', `https://weather.googleapis.com/v1/currentConditions:lookup?location.latitude=${lat}&location.longitude=${lon}`);
     
     const weatherResponse = await fetch(weatherUrl, {
       cache: 'no-store', // Prevent caching
@@ -88,8 +88,8 @@ export async function getWeatherData(location: string = 'Mumbai, India'): Promis
     console.log('[WeatherService] Raw Google Weather response:', weatherData);
 
     // Fetch daily forecast (3 days)
-    const forecastUrl = `/api/forecast/days?key=${apiKey}&location.latitude=${lat}&location.longitude=${lon}&days=3`;
-    console.log('[WeatherService] Forecast API URL (without key):', `/api/forecast/days?location.latitude=${lat}&location.longitude=${lon}&days=3`);
+    const forecastUrl = `https://weather.googleapis.com/v1/forecast/days:lookup?key=${apiKey}&location.latitude=${lat}&location.longitude=${lon}&days=3`;
+    console.log('[WeatherService] Forecast API URL (without key):', `https://weather.googleapis.com/v1/forecast/days:lookup?location.latitude=${lat}&location.longitude=${lon}&days=3`);
     
     const forecastResponse = await fetch(forecastUrl, {
       cache: 'no-store', // Prevent caching
@@ -159,7 +159,7 @@ export async function getWeatherData(location: string = 'Mumbai, India'): Promis
  */
 async function getLocationName(lat: number, lon: number, apiKey: string): Promise<string> {
   try {
-    const url = `/api/geocode/json?latlng=${lat},${lon}&key=${apiKey}`;
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lon}&key=${apiKey}`;
     const response = await fetch(url);
     const data = await response.json();
     
