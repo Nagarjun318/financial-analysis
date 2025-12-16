@@ -27,6 +27,13 @@ export function useInvestments(userId: string) {
       return;
     }
 
+    if (!userId) {
+      console.warn('No userId provided to useInvestments');
+      setInvestments([]);
+      setIsLoading(false);
+      return;
+    }
+
     try {
       setIsLoading(true);
       setError(null);
@@ -34,6 +41,7 @@ export function useInvestments(userId: string) {
       const { data, error: fetchError } = await supabase
         .from('investments')
         .select('*')
+        .eq('user_id', userId)
         .order('date', { ascending: false });
 
       if (fetchError) throw fetchError;

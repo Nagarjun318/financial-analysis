@@ -100,7 +100,12 @@ const InvestmentPage: React.FC<InvestmentPageProps> = ({ userId }) => {
   // --- Effects ---
   // Load investments from Supabase
   useEffect(() => {
-    loadInvestments();
+    if (userId) {
+      loadInvestments();
+    } else {
+      setIsLoading(false);
+      setInvestments([]);
+    }
   }, [userId]);
 
   // Click outside to close model selector
@@ -181,9 +186,15 @@ const InvestmentPage: React.FC<InvestmentPageProps> = ({ userId }) => {
       if (!supabase) {
         throw new Error('Database connection not available');
       }
+      if (!userId) {
+        setInvestments([]);
+        setIsLoading(false);
+        return;
+      }
       const { data, error: fetchError } = await supabase
         .from('investments')
         .select('*')
+        .eq('user_id', userId)
         .order('date', { ascending: false });
 
       if (fetchError) throw fetchError;
@@ -215,6 +226,10 @@ const InvestmentPage: React.FC<InvestmentPageProps> = ({ userId }) => {
   // Refresh real-time prices
   const refreshPrices = async () => {
     if (investments.length === 0) return;
+    if (!userId) {
+      alert('Please log in to refresh prices');
+      return;
+    }
     
     setIsRefreshing(true);
     try {
@@ -252,7 +267,8 @@ const InvestmentPage: React.FC<InvestmentPageProps> = ({ userId }) => {
           await supabase
             .from('investments')
             .update({ current_value: update.currentValue, last_updated: update.lastUpdated })
-            .eq('id', update.id);
+            .eq('id', update.id)
+            .eq('user_id', userId);
         }
         
         // Reload investments to get updated values
@@ -327,6 +343,10 @@ const InvestmentPage: React.FC<InvestmentPageProps> = ({ userId }) => {
       if (!supabase) {
         throw new Error('Database connection not available');
       }
+      if (!userId) {
+        alert('Please log in to add or edit investments');
+        return;
+      }
       
       const dbData = {
         name: formData.name,
@@ -336,7 +356,8 @@ const InvestmentPage: React.FC<InvestmentPageProps> = ({ userId }) => {
         date: formData.date,
         notes: formData.notes || null,
         quantity: formData.quantity || null,
-        symbol: formData.symbol || null
+        symbol: formData.symbol || null,
+        user_id: userId
       };
 
       if (editingId) {
@@ -344,7 +365,8 @@ const InvestmentPage: React.FC<InvestmentPageProps> = ({ userId }) => {
         const { error: updateError } = await supabase
           .from('investments')
           .update(dbData)
-          .eq('id', editingId);
+          .eq('id', editingId)
+          .eq('user_id', userId);
 
         if (updateError) throw updateError;
       } else {
@@ -401,10 +423,15 @@ const InvestmentPage: React.FC<InvestmentPageProps> = ({ userId }) => {
         if (!supabase) {
           throw new Error('Database connection not available');
         }
+        if (!userId) {
+          alert('Please log in to delete investments');
+          return;
+        }
         const { error: deleteError } = await supabase
           .from('investments')
           .delete()
-          .eq('id', id);
+          .eq('id', id)
+          .eq('user_id', userId);
 
         if (deleteError) throw deleteError;
 

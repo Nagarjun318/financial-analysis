@@ -1,5 +1,5 @@
 import React from 'react';
-import { Menu, X, Home, User, Briefcase, TrendingUp, PieChart, LogOut, ShoppingCart, Wallet, Target, ChevronLeft, ChevronRight, BarChart3 } from 'lucide-react';
+import { Menu, X, Home, User, Briefcase, TrendingUp, PieChart, LogOut, ShoppingCart, Wallet, Target, ChevronLeft, ChevronRight, BarChart3, Cloud, CloudRain, Sun, CloudSnow, CloudFog, CloudDrizzle, RefreshCw } from 'lucide-react';
 import ThemeSwitcher from './ThemeSwitcher';
 
 interface SidebarProps {
@@ -9,9 +9,26 @@ interface SidebarProps {
     onSignOut?: () => void;
     isOpen: boolean;
     onToggle: () => void;
+    weatherCondition?: string;
+    weatherTemperature?: number;
+    onWeatherRefresh?: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ currentSection, onSectionChange, userEmail, onSignOut, isOpen, onToggle }) => {
+const Sidebar: React.FC<SidebarProps> = ({ currentSection, onSectionChange, userEmail, onSignOut, isOpen, onToggle, weatherCondition, weatherTemperature, onWeatherRefresh }) => {
+    // Get weather icon based on condition
+    const getWeatherIcon = () => {
+        if (!weatherCondition) return Cloud;
+        const condition = weatherCondition.toLowerCase();
+        if (condition.includes('rain')) return CloudRain;
+        if (condition.includes('snow')) return CloudSnow;
+        if (condition.includes('cloud')) return Cloud;
+        if (condition.includes('fog') || condition.includes('mist')) return CloudFog;
+        if (condition.includes('drizzle')) return CloudDrizzle;
+        if (condition.includes('clear') || condition.includes('sunny')) return Sun;
+        return Cloud;
+    };
+
+    const WeatherIcon = getWeatherIcon();
     const navGroups = [
         {
             id: 'general',
@@ -126,6 +143,38 @@ const Sidebar: React.FC<SidebarProps> = ({ currentSection, onSectionChange, user
 
                 {/* Footer */}
                 <div className="p-4 border-t border-gray-200 dark:border-gray-700 space-y-4">
+                    {/* Weather Display */}
+                    {weatherCondition && (
+                        <div className={`flex items-center gap-2 text-gray-700 dark:text-gray-300 ${!isOpen && 'justify-center'}`}>
+                            <WeatherIcon className="w-5 h-5 flex-shrink-0 text-blue-500 dark:text-blue-400" />
+                            {isOpen ? (
+                                <>
+                                    <div className="flex-1">
+                                        <p className="text-sm font-medium">{weatherCondition}</p>
+                                        {weatherTemperature !== undefined && (
+                                            <p className="text-xs text-gray-500 dark:text-gray-400">{weatherTemperature}°C</p>
+                                        )}
+                                    </div>
+                                    {onWeatherRefresh && (
+                                        <button
+                                            onClick={onWeatherRefresh}
+                                            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 transition-colors"
+                                            title="Refresh weather"
+                                        >
+                                            <RefreshCw className="w-4 h-4" />
+                                        </button>
+                                    )}
+                                </>
+                            ) : (
+                                weatherTemperature !== undefined && (
+                                    <span className="absolute left-12 text-xs font-medium bg-blue-500 text-white px-1.5 py-0.5 rounded">
+                                        {weatherTemperature}°
+                                    </span>
+                                )
+                            )}
+                        </div>
+                    )}
+
                     {/* Theme Switcher */}
                     <div className={`flex items-center ${isOpen ? 'justify-between' : 'justify-center'}`}>
                         {isOpen && <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Theme</span>}

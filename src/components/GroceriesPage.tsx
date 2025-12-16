@@ -5,6 +5,7 @@ import { Plus, Trash2, ShoppingCart, Loader2, AlertTriangle, Minus, ChevronDown,
 import { suggestGroceryItemDetails, GEMINI_MODELS, GeminiModel } from '../services/geminiService';
 import { formatCurrency } from '../utils';
 import { GroceryAdvisorChat } from './GroceryAdvisorChat';
+import WeatherSmartAssistant from './WeatherSmartAssistant';
 
 // Types
 interface GroceryItem {
@@ -39,7 +40,7 @@ interface ShoppingListItem {
 
 const BASE_CATEGORIES = ['Dairy', 'Produce', 'Meat', 'Bakery', 'Pantry', 'Beverages', 'Frozen', 'Snacks', 'Household', 'Personal Care', 'Stationery', 'General'];
 
-const GroceriesPage: React.FC<{ userId: string }> = ({ userId }) => {
+const GroceriesPage: React.FC<{ userId: string; onWeatherUpdate?: (condition: string, temp: number) => void }> = ({ userId, onWeatherUpdate }) => {
     const [items, setItems] = useState([] as GroceryItem[]);
     const [shoppingList, setShoppingList] = useState([] as ShoppingListItem[]);
     const [loading, setLoading] = useState(true);
@@ -73,6 +74,50 @@ const GroceriesPage: React.FC<{ userId: string }> = ({ userId }) => {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [editingItem, setEditingItem] = useState(null as GroceryItem | null);
     const [chatPanelWidth, setChatPanelWidth] = useState(0);
+    const [weatherLocation, setWeatherLocation] = useState(''); // Coordinates for API
+    const [weatherLocationName, setWeatherLocationName] = useState(''); // Display name
+
+    // Get user's location on mount for weather
+    useEffect(() => {
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                async (position) => {
+                    const { latitude, longitude } = position.coords;
+                    const coords = `${latitude},${longitude}`;
+                    setWeatherLocation(coords);
+                    
+                    // Reverse geocode to get location name
+                    try {
+                        const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+                        const response = await fetch(`/api/geocode/json?latlng=${latitude},${longitude}&key=${apiKey}`);
+                        const data = await response.json();
+                        
+                        if (data.status === 'OK' && data.results[0]) {
+                            const addressComponents = data.results[0].address_components;
+                            const city = addressComponents.find((c: any) => c.types.includes('locality'))?.long_name;
+                            const country = addressComponents.find((c: any) => c.types.includes('country'))?.long_name;
+                            const locationName = city && country ? `${city}, ${country}` : data.results[0].formatted_address;
+                            setWeatherLocationName(locationName);
+                            console.log('[GroceriesPage] Location name set to:', locationName);
+                        }
+                    } catch (err) {
+                        console.error('[GroceriesPage] Error reverse geocoding:', err);
+                        setWeatherLocationName('Current Location');
+                    }
+                    
+                    console.log('[GroceriesPage] Coordinates set to:', coords);
+                },
+                (error) => {
+                    console.warn('[GroceriesPage] Geolocation error, using default:', error);
+                    setWeatherLocation('13.0827,80.2707'); // Chennai coordinates as fallback
+                    setWeatherLocationName('Chennai, India');
+                }
+            );
+        } else {
+            setWeatherLocation('13.0827,80.2707'); // Chennai coordinates as fallback
+            setWeatherLocationName('Chennai, India');
+        }
+    }, []);
 
     // Fetch data
     useEffect(() => {
@@ -491,6 +536,34 @@ const GroceriesPage: React.FC<{ userId: string }> = ({ userId }) => {
                             : i
                     ));
                 }
+            } else {
+                // Item not in inventory - create new inventory item
+                const { data: newItem, error: insertError } = await supabase
+                    .from('groceries')
+                    .insert([{
+                        user_id: userId,
+                        item_name: shoppingItem.item_name,
+                        category: shoppingItem.category || 'General',
+                        current_stock: shoppingItem.quantity,
+                        min_stock: 1,
+                        unit: shoppingItem.unit || 'units',
+                        package_size: shoppingItem.package_size || null,
+                        price: shoppingItem.price || 0,
+                        last_purchased_date: new Date().toISOString().split('T')[0]
+                    }])
+                    .select();
+
+                if (insertError) throw insertError;
+
+                if (newItem && newItem[0]) {
+                    setItems([...items, newItem[0]]);
+                    
+                    // Add new category if needed
+                    const newCategory = shoppingItem.category || 'General';
+                    if (!availableCategories.includes(newCategory)) {
+                        setAvailableCategories((prev: string[]) => [...prev, newCategory].sort());
+                    }
+                }
             }
 
             // Remove from shopping list
@@ -519,7 +592,7 @@ const GroceriesPage: React.FC<{ userId: string }> = ({ userId }) => {
 
             // Process each item
             for (const item of pickedItems) {
-                // 1. Update inventory if linked
+                // 1. Update inventory if linked, or create new inventory item
                 if (item.grocery_id) {
                     const inventoryItem = items.find((i: GroceryItem) => i.id === item.grocery_id);
                     if (inventoryItem) {
@@ -532,6 +605,21 @@ const GroceriesPage: React.FC<{ userId: string }> = ({ userId }) => {
                             })
                             .eq('id', inventoryItem.id);
                     }
+                } else {
+                    // Item not in inventory - create new inventory item
+                    await supabase
+                        .from('groceries')
+                        .insert([{
+                            user_id: userId,
+                            item_name: item.item_name,
+                            category: item.category || 'General',
+                            current_stock: item.quantity,
+                            min_stock: 1,
+                            unit: item.unit || 'units',
+                            package_size: item.package_size || null,
+                            price: item.price || 0,
+                            last_purchased_date: new Date().toISOString().split('T')[0]
+                        }]);
                 }
 
                 // 2. Remove from shopping list
@@ -598,6 +686,39 @@ const GroceriesPage: React.FC<{ userId: string }> = ({ userId }) => {
         } catch (error) {
             console.error('Error adding suggested items:', error);
             alert('Failed to add items to shopping list.');
+        }
+    };
+
+    // Handler for adding items from weather suggestions
+    const handleAddWeatherItems = async (itemNames: string[]) => {
+        if (!supabase || !itemNames || itemNames.length === 0) return;
+
+        try {
+            const newItems = itemNames.map(itemName => ({
+                user_id: userId,
+                grocery_id: null,
+                item_name: itemName,
+                category: 'General',
+                quantity: 1,
+                unit: 'units',
+                is_auto_added: false
+            }));
+
+            const { data, error } = await supabase
+                .from('shopping_list')
+                .insert(newItems)
+                .select();
+
+            if (error) throw error;
+
+            if (data) {
+                setShoppingList([...shoppingList, ...data]);
+                alert(`Added ${data.length} weather-suggested items to your shopping list!`);
+                setActiveTab('shopping');
+            }
+        } catch (error) {
+            console.error('Error adding weather items:', error);
+            alert('Failed to add items. Please try again.');
         }
     };
 
@@ -717,6 +838,20 @@ const GroceriesPage: React.FC<{ userId: string }> = ({ userId }) => {
                     </button>
                 </div>
             </div>
+
+            {/* Weather-Smart Grocery Assistant */}
+            {weatherLocation && (
+                <WeatherSmartAssistant 
+                    location={weatherLocation}
+                    locationName={weatherLocationName}
+                    onAddItems={handleAddWeatherItems}
+                    onLocationChange={(coords, name) => {
+                        setWeatherLocation(coords);
+                        setWeatherLocationName(name);
+                    }}
+                    onWeatherUpdate={onWeatherUpdate}
+                />
+            )}
 
             {/* Inventory Tab */}
             {activeTab === 'inventory' && (

@@ -1,8 +1,13 @@
 import React, { useState } from 'react';
 import { supabase } from '../services/supabaseClient';
-import { Loader2 } from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
 
-const Auth: React.FC = () => {
+interface AuthProps {
+  isModal?: boolean;
+  onClose?: () => void;
+}
+
+const Auth: React.FC<AuthProps> = ({ isModal = false, onClose }) => {
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -19,6 +24,11 @@ const Auth: React.FC = () => {
       setError(error.message);
     } else if (!data.session) {
       setError('Login failed. Please try again.');
+    } else {
+      // Successfully logged in
+      if (isModal && onClose) {
+        onClose();
+      }
     }
     setLoading(false);
   };
@@ -54,15 +64,23 @@ const Auth: React.FC = () => {
     setLoading(false);
   };
 
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-light-bg dark:bg-dark-bg p-4">
-      <div className="w-full max-w-md p-8 space-y-6 bg-light-card dark:bg-dark-card rounded-xl shadow-lg">
-        <div>
-          <h1 className="text-3xl font-bold text-center text-brand-primary">Finance Dashboard</h1>
-          <p className="mt-2 text-center text-sm text-light-text-secondary dark:text-dark-text-secondary">
-            Sign in to your account or create a new one
-          </p>
-        </div>
+  const content = (
+    <div className="w-full max-w-md p-8 space-y-6 bg-light-card dark:bg-dark-card rounded-xl shadow-lg relative">
+      {isModal && onClose && (
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+          aria-label="Close"
+        >
+          <X className="h-6 w-6" />
+        </button>
+      )}
+      <div>
+        <h1 className="text-3xl font-bold text-center text-brand-primary">Finance Dashboard</h1>
+        <p className="mt-2 text-center text-sm text-light-text-secondary dark:text-dark-text-secondary">
+          Sign in to your account or create a new one
+        </p>
+      </div>
   <form className="space-y-6" onSubmit={handleLogin}>
           <div>
             <label htmlFor="email" className="text-sm font-medium text-light-text dark:text-dark-text">
@@ -127,12 +145,33 @@ const Auth: React.FC = () => {
             </button>
           </div>
         </form>
-         <div className="text-center text-xs text-light-text-secondary dark:text-dark-text-secondary">
-            <p>Don't have a Supabase project yet?</p>
-            <a href="https://supabase.com/" target="_blank" rel="noopener noreferrer" className="font-medium text-brand-primary hover:underline">Get started with Supabase</a>
-            <p className="mt-2">Make sure to create a `transactions` table in your database.</p>
+      <div className="text-center text-xs text-light-text-secondary dark:text-dark-text-secondary">
+        <p>Don't have a Supabase project yet?</p>
+        <a href="https://supabase.com/" target="_blank" rel="noopener noreferrer" className="font-medium text-brand-primary hover:underline">Get started with Supabase</a>
+        <p className="mt-2">Make sure to create a `transactions` table in your database.</p>
+      </div>
+    </div>
+  );
+
+  if (isModal) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        {/* Backdrop with blur */}
+        <div 
+          className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+          onClick={onClose}
+        />
+        {/* Modal content */}
+        <div className="relative z-10">
+          {content}
         </div>
       </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-light-bg dark:bg-dark-bg p-4">
+      {content}
     </div>
   );
 };

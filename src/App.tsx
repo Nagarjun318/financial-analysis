@@ -21,6 +21,9 @@ import { processXlsData, analyzeTransactions, getCategory } from './utils';
 import { useTransactions } from './hooks/useTransactions.ts';
 import { makeTransactionKey, filterDuplicateStaged } from './domain/transactions/dedupe.ts';
 import DocumentsPage from './components/DocumentsPage.tsx';
+import WeatherBackground from './components/WeatherBackground.tsx';
+import { getWeatherData } from './services/weatherService';
+import { WeatherProvider, useWeather } from './contexts/WeatherContext.tsx';
 
 const emptyAnalysisResult: AnalysisResult = {
   summary: { totalIncome: 0, totalExpenses: 0, netSavings: 0 },
@@ -35,6 +38,49 @@ const App: React.FC = () => {
   const [isUploading, setIsUploading] = React.useState(false);
   const [error, setError] = React.useState(null as string | null);
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
+  const [showAuthModal, setShowAuthModal] = React.useState(false);
+  const [weatherCondition, setWeatherCondition] = React.useState<string>();
+  const [weatherTemperature, setWeatherTemperature] = React.useState<number>();
+
+  // Fetch weather on initial load
+  React.useEffect(() => {
+    handleWeatherRefresh();
+  }, []);
+
+  // Weather refresh handler
+  const handleWeatherRefresh = async () => {
+    try {
+      if (!navigator.geolocation) {
+        alert('Geolocation is not supported by your browser');
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const { latitude, longitude } = position.coords;
+          const location = `${latitude},${longitude}`;
+          const weather = await getWeatherData(location);
+          
+          if (weather && weather.temperature !== undefined) {
+            setWeatherCondition(weather.condition);
+            setWeatherTemperature(weather.temperature);
+          }
+        },
+        (error) => {
+          console.error('Error getting location:', error);
+          alert('Could not get your location. Please enable location services.');
+        }
+      );
+    } catch (error) {
+      console.error('Error refreshing weather:', error);
+      alert('Failed to refresh weather data');
+    }
+  };
+
+  // Debug weather state changes
+  React.useEffect(() => {
+    console.log('[App] Weather updated:', { weatherCondition, weatherTemperature });
+  }, [weatherCondition, weatherTemperature]);
 
   // Staging transactions from file upload
   const [stagedTransactions, setStagedTransactions] = React.useState([] as Transaction[]);
@@ -241,20 +287,30 @@ const App: React.FC = () => {
     return <SetupInstructions />;
   }
 
-  // Show Auth page only if user explicitly navigates to it
-  if (currentSection === 'auth' && !session) {
-    return <Auth />;
-  }
-
   return (
-    <div className="min-h-screen bg-light-bg dark:bg-dark-bg text-light-text dark:text-dark-text font-sans">
+    <div className="min-h-screen text-light-text dark:text-dark-text font-sans relative">
+      {/* Weather Background */}
+      <WeatherBackground 
+        condition={weatherCondition} 
+        temperature={weatherTemperature}
+      />
+      
       <Sidebar
         currentSection={currentSection}
-        onSectionChange={setCurrentSection}
+        onSectionChange={(section) => {
+          if (section === 'auth' && !session) {
+            setShowAuthModal(true);
+          } else {
+            setCurrentSection(section);
+          }
+        }}
         userEmail={session?.user?.email}
         onSignOut={session ? handleSignOut : undefined}
         isOpen={isSidebarOpen}
         onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
+        weatherCondition={weatherCondition}
+        weatherTemperature={weatherTemperature}
+        onWeatherRefresh={handleWeatherRefresh}
       />
 
       <div className={`transition-all duration-300 ease-in-out ${isSidebarOpen ? 'md:ml-64' : 'md:ml-20'}`}>
@@ -302,7 +358,15 @@ const App: React.FC = () => {
                   />
                 )}
                 {currentSection === 'investment' && <InvestmentPage userId={session?.user?.id} />}
-                {currentSection === 'groceries' && <GroceriesPage userId={session?.user?.id} />}
+                {currentSection === 'groceries' && (
+                  <GroceriesPage 
+                    userId={session?.user?.id} 
+                    onWeatherUpdate={(condition, temp) => {
+                      setWeatherCondition(condition);
+                      setWeatherTemperature(temp);
+                    }}
+                  />
+                )}
                 {currentSection === 'networth' && (
                   <NetWorthPage
                     transactions={analysisResult.transactions}
@@ -352,6 +416,11 @@ const App: React.FC = () => {
             transaction={editingTransaction}
             onConfirm={handleConfirmEdit}
           />
+        )}
+
+        {/* Auth Modal */}
+        {showAuthModal && !session && (
+          <Auth isModal={true} onClose={() => setShowAuthModal(false)} />
         )}
       </div>
     </div>
