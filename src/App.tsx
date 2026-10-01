@@ -537,7 +537,14 @@ const App: React.FC = () => {
 
         {/* Auth Modal */}
         {showAuthModal && !session && (
-          <Auth isModal={true} onClose={() => setShowAuthModal(false)} />
+          <Auth
+            isModal={true}
+            onClose={() => setShowAuthModal(false)}
+            onSuccess={(s) => {
+              setSession(s);
+              setShowAuthModal(false);
+            }}
+          />
         )}
 
         <CommandPalette

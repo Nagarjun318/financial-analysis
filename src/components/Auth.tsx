@@ -1,17 +1,19 @@
 import React, { useState } from 'react';
 import { client as supabase } from '../services/neonClient';
-import { X } from 'lucide-react';
+import { X, Eye, EyeOff } from 'lucide-react';
 import { Button } from './ui';
 
 interface AuthProps {
   isModal?: boolean;
   onClose?: () => void;
+  onSuccess?: (session: { user: { id: string; email?: string | null }; access_token?: string } | null) => void;
 }
 
-const Auth: React.FC<AuthProps> = ({ isModal = false, onClose }) => {
+const Auth: React.FC<AuthProps> = ({ isModal = false, onClose, onSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -28,12 +30,27 @@ const Auth: React.FC<AuthProps> = ({ isModal = false, onClose }) => {
     const { data, error } = await (supabase as any).auth.signInWithPassword({ email, password });
     if (error) {
       setError(error.message);
-    } else if (!data.session) {
-      setError('Login failed. Please try again.');
     } else {
-      // Successfully logged in
-      if (isModal && onClose) {
-        onClose();
+      // signIn may return the session directly, or only persist it
+      // (adapter-dependent) — fall back to an explicit getSession so the
+      // app updates immediately instead of waiting for a refresh.
+      let session = data?.session ?? null;
+      if (!session) {
+        try {
+          const { data: sessionData } = await (supabase as any).auth.getSession();
+          session = sessionData?.session ?? null;
+        } catch {
+          // ignore — handled below
+        }
+      }
+      if (!session) {
+        setError('Login failed. Please try again.');
+      } else {
+        onSuccess?.(session);
+        // Successfully logged in
+        if (isModal && onClose) {
+          onClose();
+        }
       }
     }
     setLoading(false);
@@ -46,13 +63,19 @@ const Auth: React.FC<AuthProps> = ({ isModal = false, onClose }) => {
     setLoading(true);
     // Neon Auth (Better Auth) requires a display name; derive one from email.
     const displayName = email.split('@')[0] || 'User';
-    const { error } = await (supabase as any).auth.signUp({
+    const { data, error } = await (supabase as any).auth.signUp({
       email,
       password,
       options: { data: { displayName, name: displayName } },
     });
     if (error) {
       setError(error.message);
+    } else if ((data as any)?.session) {
+      // Auto-signed in (no email confirmation required) — update app now.
+      onSuccess?.((data as any).session);
+      if (isModal && onClose) {
+        onClose();
+      }
     } else {
       // Email confirmation may be required based on project settings.
       setMessage('Account created. Check your email for a confirmation link if required.');
@@ -120,17 +143,27 @@ const Auth: React.FC<AuthProps> = ({ isModal = false, onClose }) => {
             <label htmlFor="password"className="text-sm font-medium text-light-text dark:text-dark-text">
               Password (must be at least 6 characters)
             </label>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 block w-full px-3 py-2 bg-light-bg dark:bg-dark-bg border border-gray-300 dark:border-gray-600 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-brand-primary focus:border-brand-primary sm:text-sm"
-              placeholder="••••••••"
-            />
+            <div className="relative mt-1">
+              <input
+                id="password"
+                name="password"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="block w-full px-3 py-2 pr-10 bg-light-bg dark:bg-dark-bg border border-gray-300 dark:border-gray-600 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-brand-primary focus:border-brand-primary sm:text-sm"
+                placeholder="••••••••"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+              </button>
+            </div>
           </div>
 
           {error && <p className="text-sm text-red-500 text-center">{error}</p>}
