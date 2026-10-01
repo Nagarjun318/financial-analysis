@@ -6,7 +6,7 @@ import { XCircle, ArrowUp, ArrowDown, Pencil, Trash2, Loader2, Sparkles, Refresh
 import { formatCurrency, formatDisplayDate } from '../utils.ts';
 import { exportTransactionsCsv } from '../utils/exportCsv.ts';
 import { predictTransactionCategoriesBatch } from '../services/geminiService';
-import { updateTransactionAICategoriesBatch, clearAllAICategories } from '../services/supabaseClient';
+import { updateTransactionAICategoriesBatch, clearAllAICategories } from '../services/neonClient';
 
 interface TransactionListProps {
   transactions: Transaction[];
@@ -63,7 +63,7 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, filters
   const [deletingId, setDeletingId] = React.useState(null as number | null);
 
   const sortedTransactions = React.useMemo(() => {
-    let sortableItems: Transaction[] = [...transactions];
+    const sortableItems: Transaction[] = [...transactions];
     if (sortConfig.key !== null) {
       const key = sortConfig.key;
       sortableItems.sort((a: Transaction, b: Transaction) => {
@@ -133,7 +133,7 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, filters
     }
   };
 
-  const handleLocalFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLocalFilterChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     onFilterChange({ [name]: value });
   };
@@ -231,7 +231,8 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, filters
     (filters.amount && filters.amount.trim() !== '') ||
     (filters.type && filters.type !== 'all') ||
     (filters.monthYear && filters.monthYear.trim() !== '') ||
-    (filters.year && filters.year !== currentYear)
+    (filters.year && filters.year !== currentYear) ||
+    (filters.aiCategory && filters.aiCategory !== 'all')
   );
   return (
     <div className="glass-panel animated-border p-4 sm:p-6 rounded-xl shadow-lg">
@@ -296,6 +297,18 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, filters
             onChange={handleLocalFilterChange}
             className="w-full sm:w-48 bg-light-bg dark:bg-dark-bg border border-gray-300 dark:border-gray-600 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-brand-primary"
           />
+          <select
+            name="aiCategory"
+            value={filters.aiCategory}
+            onChange={handleLocalFilterChange}
+            className="bg-light-bg dark:bg-dark-bg border border-gray-300 dark:border-gray-600 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-brand-primary"
+            title="Filter by AI category prediction status"
+            aria-label="Filter by AI category prediction status"
+          >
+            <option value="all">AI: All</option>
+            <option value="predicted">AI: Predicted</option>
+            <option value="not_predicted">AI: Not predicted</option>
+          </select>
           {isFiltered && (
             <button
               onClick={onResetFilters}
@@ -382,10 +395,10 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, filters
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-2">
-                      <button onClick={() => onEdit(t)} title="Edit" className="p-1.5 text-gray-500 hover:text-brand-primary hover:bg-gray-200 dark:hover:bg-gray-600 rounded-full transition-colors">
+                      <button onClick={() => onEdit(t)} title="Edit" aria-label={`Edit transaction ${t.description}`} className="p-1.5 text-gray-500 hover:text-brand-primary hover:bg-gray-200 dark:hover:bg-gray-600 rounded-full transition-colors">
                         <Pencil className="h-4 w-4" />
                       </button>
-                      <button onClick={() => t.id && handleDeleteClick(t.id)} disabled={deletingId === t.id} title="Delete" className="p-1.5 text-gray-500 hover:text-red-500 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-full transition-colors disabled:opacity-50">
+                      <button onClick={() => t.id && handleDeleteClick(t.id)} disabled={deletingId === t.id} title="Delete" aria-label={`Delete transaction ${t.description}`} className="p-1.5 text-gray-500 hover:text-red-500 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-full transition-colors disabled:opacity-50">
                         {deletingId === t.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                       </button>
                     </div>

@@ -27,7 +27,6 @@ export const AIInsightsPanel: React.FC<Props> = ({ assets, liabilities, timeline
   const analyzeHealth = React.useCallback(async (force = false) => {
     // Check if we already have data for this key in memory (to prevent re-processing)
     if (!force && lastCacheKeyRef.current === cacheKey) {
-      console.log('✅ Using cached health score (memory)');
       return;
     }
 
@@ -39,7 +38,6 @@ export const AIInsightsPanel: React.FC<Props> = ({ assets, liabilities, timeline
         const parsed = JSON.parse(cachedData);
         setHealthScore(parsed);
         lastCacheKeyRef.current = cacheKey; // Mark as loaded
-        console.log('✅ Using cached health score from storage');
         setIsUsingCache(true);
         setTimeout(() => setIsUsingCache(false), 2000);
         return;
@@ -56,7 +54,6 @@ export const AIInsightsPanel: React.FC<Props> = ({ assets, liabilities, timeline
       setHealthScore(score);
       localStorage.setItem(storageKey, JSON.stringify(score));
       lastCacheKeyRef.current = cacheKey;
-      console.log('🔄 Fetched new health score from API');
     } catch (error) {
       console.error('Failed to analyze financial health:', error);
     } finally {

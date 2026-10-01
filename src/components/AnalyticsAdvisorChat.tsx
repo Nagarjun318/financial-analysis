@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { MessageCircle, Send, Sparkles, X, Settings, Loader2, Bot, User, Target, Plus, BarChart2 } from 'lucide-react';
+import { Send, X, Settings, Loader2, Bot, Plus, BarChart2 } from 'lucide-react';
 import { Transaction } from '../types';
 import { GEMINI_MODELS, GeminiModel, getAnalyticsAdvice } from '../services/geminiService';
 import ReactMarkdown from 'react-markdown';
@@ -41,7 +41,6 @@ export function AnalyticsAdvisorChat({ transactions, onOpenChange, externalTrigg
     const [isLoading, setIsLoading] = React.useState(false);
     const [selectedModel, setSelectedModel] = React.useState(GEMINI_MODELS.FLASH_LITE as GeminiModel);
     const [showModelSelector, setShowModelSelector] = React.useState(false);
-    const [showSuggestions, setShowSuggestions] = React.useState(false);
 
     const messagesEndRef = React.useRef(null as HTMLDivElement | null);
     const modelSelectorRef = React.useRef(null as HTMLDivElement | null);
@@ -179,7 +178,6 @@ export function AnalyticsAdvisorChat({ transactions, onOpenChange, externalTrigg
         setMessages((prev: Message[]) => [...prev, userMessage]);
         setInput('');
         setIsLoading(true);
-        setShowSuggestions(false);
 
         try {
             const response = await getAnalyticsAdvice(

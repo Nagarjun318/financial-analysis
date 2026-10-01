@@ -1,4 +1,5 @@
 import { callGeminiAPI, GeminiModel, GEMINI_MODELS } from './geminiService';
+import { apiFetch, isFunctionConfigured } from './apiClient.ts';
 
 export interface WeatherData {
   location: string;
@@ -25,19 +26,75 @@ export interface WeatherGrocerySuggestion {
   savingTips: string[];
 }
 
+/** Raw Google payloads (same wire format via Function proxy or direct fetch). */
+export interface GoogleCurrentPayload {
+  weatherCondition?: { type?: string };
+  weatherCode?: string;
+  temperature?: { degrees?: number; value?: number };
+  relativeHumidity?: number | { value?: number };
+}
+
+export interface GoogleForecastDayPayload {
+  date?: string;
+  time?: string;
+  weatherCode?: string;
+  condition?: string;
+  temperatureHigh?: { value?: number };
+  temperatureLow?: { value?: number };
+  temperature?: { max?: { value?: number }; min?: { value?: number } };
+  maxTemp?: number;
+  minTemp?: number;
+  precipitationProbability?: { value?: number };
+  precipitation?: number;
+}
+
+export interface GoogleForecastPayload {
+  dailyForecasts?: GoogleForecastDayPayload[];
+  forecasts?: GoogleForecastDayPayload[];
+}
+
 /**
- * Fetch weather data using Google Weather API via proxy
+ * Phase 4: Function proxy for raw Google payloads (the Google key stays
+ * server-side). Returns null when the Function is unconfigured/unreachable so
+ * the caller falls back to direct provider calls (local-dev keys only).
+ */
+async function fetchWeatherViaServer(
+  location: string
+): Promise<{ current: GoogleCurrentPayload; forecast: GoogleForecastPayload; locationName: string } | null> {
+  if (!isFunctionConfigured()) return null;
+  try {
+    return await apiFetch('/api/weather/by-location', { query: { location } });
+  } catch (error) {
+    console.warn('[WeatherService] Function weather fetch failed, trying direct:', error);
+    return null;
+  }
+}
+
+/**
+ * Fetch weather data: Function proxy when configured, direct Google Weather
+ * API only as a local-dev fallback (needs a client-side key).
  */
 export async function getWeatherData(location: string = 'Mumbai, India'): Promise<WeatherData | null> {
   try {
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-    
     // Validate location
     if (!location || location.trim() === '') {
       console.error('[WeatherService] Empty location provided');
       return null;
     }
-    
+
+    // Server path: one round trip (geocode + current + forecast + revgeo).
+    const viaServer = await fetchWeatherViaServer(location);
+    if (viaServer) {
+      return toWeatherData(viaServer.current, viaServer.forecast, viaServer.locationName);
+    }
+
+    // Legacy direct path (dev fallback — no keys ship in production builds).
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    if (!apiKey) {
+      console.error('[WeatherService] No Function configured and no dev API key available.');
+      return null;
+    }
+
     // Parse location - can be either "lat,lon" or "City, Country"
     let lat: number, lon: number;
     
@@ -47,10 +104,8 @@ export async function getWeatherData(location: string = 'Mumbai, India'): Promis
     if (isCoordinates) {
       // Location is coordinates
       [lat, lon] = parts.map(s => parseFloat(s));
-      console.log('[WeatherService] Using coordinates:', { lat, lon });
     } else {
       // Location is city name - need to geocode first
-      console.log('[WeatherService] Geocoding location:', location);
       const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(location)}&key=${apiKey}`;
       const geocodeResponse = await fetch(geocodeUrl);
       const geocodeData = await geocodeResponse.json();
@@ -62,14 +117,11 @@ export async function getWeatherData(location: string = 'Mumbai, India'): Promis
       
       lat = geocodeData.results[0].geometry.location.lat;
       lon = geocodeData.results[0].geometry.location.lng;
-      console.log('[WeatherService] Geocoded to:', { lat, lon });
     }
 
-    console.log('[WeatherService] Fetching weather for coordinates:', { lat, lon });
 
     // Fetch current weather using correct Google Weather API endpoint
     const weatherUrl = `https://weather.googleapis.com/v1/currentConditions:lookup?key=${apiKey}&location.latitude=${lat}&location.longitude=${lon}`;
-    console.log('[WeatherService] Weather API URL (without key):', `https://weather.googleapis.com/v1/currentConditions:lookup?location.latitude=${lat}&location.longitude=${lon}`);
     
     const weatherResponse = await fetch(weatherUrl, {
       cache: 'no-store', // Prevent caching
@@ -85,11 +137,9 @@ export async function getWeatherData(location: string = 'Mumbai, India'): Promis
     }
     
     const weatherData = await weatherResponse.json();
-    console.log('[WeatherService] Raw Google Weather response:', weatherData);
 
     // Fetch daily forecast (3 days)
     const forecastUrl = `https://weather.googleapis.com/v1/forecast/days:lookup?key=${apiKey}&location.latitude=${lat}&location.longitude=${lon}&days=3`;
-    console.log('[WeatherService] Forecast API URL (without key):', `https://weather.googleapis.com/v1/forecast/days:lookup?location.latitude=${lat}&location.longitude=${lon}&days=3`);
     
     const forecastResponse = await fetch(forecastUrl, {
       cache: 'no-store', // Prevent caching
@@ -98,44 +148,54 @@ export async function getWeatherData(location: string = 'Mumbai, India'): Promis
       }
     });
     const forecastData = forecastResponse.ok ? await forecastResponse.json() : null;
-    console.log('[WeatherService] Forecast data:', forecastData);
 
     // Get location name from reverse geocoding
     const locationName = await getLocationName(lat, lon, apiKey);
 
-    // Parse Google Weather API response
-    // Ref: https://developers.google.com/maps/documentation/weather/reference/rest
-    console.log('[WeatherService] Parsing weather data. Full structure:', JSON.stringify(weatherData, null, 2));
+    return toWeatherData(weatherData, forecastData, locationName);
     
+  } catch (error) {
+    console.error('Error fetching weather data:', error);
+    return null;
+  }
+}
+
+/**
+ * Shape raw Google payloads (server or direct — same wire format) into
+ * WeatherData. Pure from here down: no keys, no fetching.
+ * Ref: https://developers.google.com/maps/documentation/weather/reference/rest
+ */
+function toWeatherData(weatherData: GoogleCurrentPayload, forecastData: GoogleForecastPayload | null, locationName: string): WeatherData {
     // Google Weather API actual structure
     const condition = mapGoogleWeatherCondition(
-      weatherData.weatherCondition?.type || 
-      weatherData.weatherCode || 
+      weatherData.weatherCondition?.type ||
+      weatherData.weatherCode ||
       'CLEAR'
     );
-    
+
     const temperature = Math.round(
-      weatherData.temperature?.degrees || 
-      weatherData.temperature?.value || 
+      weatherData.temperature?.degrees ||
+      weatherData.temperature?.value ||
       25
     );
-    
+
+    const humidityRaw = weatherData.relativeHumidity;
     const humidity = Math.round(
-      weatherData.relativeHumidity || 
-      weatherData.relativeHumidity?.value || 
-      50
+      typeof humidityRaw === 'number' ? humidityRaw : (humidityRaw?.value ?? 50)
     );
-    
-    console.log('[WeatherService] Extracted values:', { condition, temperature, humidity });
+
 
     // Parse forecast - handle different response structures
-    const forecast = (forecastData?.dailyForecasts || forecastData?.forecasts || []).slice(0, 3).map((day: any) => ({
-      day: new Date(day.date || day.time).toLocaleDateString('en-US', { weekday: 'short' }),
-      condition: mapGoogleWeatherCondition(day.weatherCode || day.condition || 'CLEAR'),
-      maxTemp: Math.round(day.temperatureHigh?.value || day.temperature?.max?.value || day.maxTemp || 30),
-      minTemp: Math.round(day.temperatureLow?.value || day.temperature?.min?.value || day.minTemp || 20),
-      precipitation: day.precipitationProbability?.value || day.precipitation || 0
-    }));
+    const forecast = (forecastData?.dailyForecasts || forecastData?.forecasts || []).slice(0, 3).map((day) => {
+      const when = day.date || day.time;
+      return {
+        day: when ? new Date(when).toLocaleDateString('en-US', { weekday: 'short' }) : '—',
+        condition: mapGoogleWeatherCondition(day.weatherCode || day.condition || 'CLEAR'),
+        maxTemp: Math.round(day.temperatureHigh?.value || day.temperature?.max?.value || day.maxTemp || 30),
+        minTemp: Math.round(day.temperatureLow?.value || day.temperature?.min?.value || day.minTemp || 20),
+        precipitation: day.precipitationProbability?.value || day.precipitation || 0,
+      };
+    });
 
     const result = {
       location: locationName,
@@ -145,19 +205,34 @@ export async function getWeatherData(location: string = 'Mumbai, India'): Promis
       forecast
     };
 
-    console.log('[WeatherService] Parsed weather data:', result);
     return result;
-    
-  } catch (error) {
-    console.error('Error fetching weather data:', error);
-    return null;
+}
+
+/**
+ * Location display name for coordinates (Phase 4 transport). Server-first
+ * (`/api/weather/revgeo`); direct Google revgeo only as a local-dev fallback.
+ * Exported for pages that need just the name (e.g. GroceriesPage weather).
+ */
+export async function getLocationName(lat: number, lon: number, apiKey?: string): Promise<string> {
+  const fallback = `${lat.toFixed(2)}, ${lon.toFixed(2)}`;
+  if (isFunctionConfigured()) {
+    try {
+      const data = await apiFetch<{ name?: string }>('/api/weather/revgeo', {
+        query: { lat, lon },
+      });
+      if (data?.name) return data.name;
+    } catch (error) {
+      console.warn('[WeatherService] Function revgeo failed, trying direct:', error);
+    }
   }
+  if (!apiKey) return fallback;
+  return getLocationNameDirect(lat, lon, apiKey);
 }
 
 /**
  * Get location name from coordinates using reverse geocoding
  */
-async function getLocationName(lat: number, lon: number, apiKey: string): Promise<string> {
+async function getLocationNameDirect(lat: number, lon: number, apiKey: string): Promise<string> {
   try {
     const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lon}&key=${apiKey}`;
     const response = await fetch(url);

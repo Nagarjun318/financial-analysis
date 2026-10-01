@@ -1,4 +1,5 @@
 import React from 'react';
+import { reportError } from '../utils/monitoring.ts';
 
 interface ErrorBoundaryState { hasError: boolean; error: Error | null; }
 interface ErrorBoundaryProps { children?: React.ReactNode }
@@ -14,8 +15,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    // eslint-disable-next-line no-console
-    console.error('[ErrorBoundary] Caught error:', error, info);
+    reportError(error, { componentStack: info.componentStack ?? '' });
   }
 
   render() {

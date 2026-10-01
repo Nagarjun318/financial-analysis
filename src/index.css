@@ -1,0 +1,202 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---- Design tokens (single source of truth for shared surfaces) ---- */
+:root {
+  --brand-gradient: linear-gradient(90deg, #22d3ee, #818cf8, #c084fc, #f472b6);
+  --brand-rainbow: linear-gradient(120deg, #fb923c, #fbbf24, #34d399, #38bdf8, #818cf8, #c084fc, #f472b6);
+  --glass-bg: rgba(255, 255, 255, 0.8);
+  --glass-bg-dark: rgba(24, 24, 27, 0.75);
+  --glass-border: rgba(226, 232, 240, 0.6);
+  --glass-border-dark: rgba(255, 255, 255, 0.08);
+  --radius-card: 0.75rem;
+  --radius-modal: 0.75rem;
+  --radius-control: 0.5rem;
+}
+
+/* Accent gradient / rainbow text utilities */
+.gradient-text {
+  background: var(--brand-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.rainbow-text {
+  background: var(--brand-rainbow);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.glass-panel {
+  position: relative;
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+}
+
+.dark .glass-panel {
+  background: var(--glass-bg-dark);
+  /* Zinc 900 @ 75% */
+  border: 1px solid var(--glass-border-dark);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.animated-border {
+  position: relative;
+}
+
+.animated-border::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(110deg, #6366f1, #0ea5e9, #10b981, #f59e0b, #ec4899, #8b5cf6, #6366f1);
+  background-size: 400% 400%;
+  animation: borderShift 14s linear infinite;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: .3;
+}
+
+.dark .animated-border::after {
+  opacity: .5;
+}
+
+@keyframes borderShift {
+  to {
+    background-position: 400% 0;
+  }
+}
+
+@keyframes pulseGradient {
+  0%,
+  100% {
+    filter: hue-rotate(0deg);
+  }
+
+  50% {
+    filter: hue-rotate(40deg);
+  }
+}
+
+.gradient-table-row:hover {
+  background: rgba(241, 245, 249, 0.8);
+}
+
+.dark .gradient-table-row:hover {
+  background: rgba(39, 39, 42, 0.6);
+  /* Zinc 800 */
+}
+
+.chart-legend-accent {
+  font-size: 12px;
+  letter-spacing: .5px;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.5s ease-out forwards;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slideUp {
+  animation: slideUp 0.5s ease-out forwards;
+}
+
+/* Weather Background Animations */
+@keyframes fall {
+  to {
+    transform: translateY(100vh);
+  }
+}
+
+.animate-fall {
+  animation: fall linear infinite;
+}
+
+@keyframes snowfall {
+  to {
+    transform: translateY(100vh) translateX(50px);
+  }
+}
+
+.animate-snowfall {
+  animation: snowfall linear infinite;
+}
+
+@keyframes lightning {
+  0%, 90%, 100% {
+    background-color: rgba(255, 255, 255, 0);
+  }
+  95% {
+    background-color: rgba(255, 255, 255, 0.8);
+  }
+}
+
+.animate-lightning {
+  animation: lightning 5s infinite;
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(20px, -10px);
+  }
+}
+
+.animate-float {
+  animation: float 8s ease-in-out infinite;
+}
+
+.animate-float-delayed {
+  animation: float 10s ease-in-out infinite;
+  animation-delay: 2s;
+}
+
+.animate-float-slow {
+  animation: float 12s ease-in-out infinite;
+  animation-delay: 4s;
+}
+
+@keyframes pulse-slow {
+  0%, 100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 4s ease-in-out infinite;
+}

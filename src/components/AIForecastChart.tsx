@@ -28,7 +28,6 @@ export const AIForecastChart: React.FC<Props> = ({ timeline, liabilities }) => {
   const generateForecast = React.useCallback(async (force = false) => {
     // Check if we already have data for this key in memory
     if (!force && lastCacheKeyRef.current === cacheKey && forecast) {
-      console.log('✅ Using cached forecast (memory)');
       setIsUsingCache(true);
       setTimeout(() => setIsUsingCache(false), 2000);
       return;
@@ -42,7 +41,6 @@ export const AIForecastChart: React.FC<Props> = ({ timeline, liabilities }) => {
         const parsed = JSON.parse(cachedData);
         setForecast(parsed);
         lastCacheKeyRef.current = cacheKey; // Mark as loaded
-        console.log('✅ Using cached forecast from storage');
         setIsUsingCache(true);
         setTimeout(() => setIsUsingCache(false), 2000);
         return;
@@ -59,7 +57,6 @@ export const AIForecastChart: React.FC<Props> = ({ timeline, liabilities }) => {
       setForecast(result);
       localStorage.setItem(storageKey, JSON.stringify(result));
       lastCacheKeyRef.current = cacheKey;
-      console.log('🔄 Fetched new forecast from API');
     } catch (error) {
       console.error('Failed to generate forecast:', error);
     } finally {
@@ -151,8 +148,6 @@ export const AIForecastChart: React.FC<Props> = ({ timeline, liabilities }) => {
             <div className="flex h-full gap-1 min-w-full">
               {forecast.periods.map((period: any, idx: number) => {
                 const netWorthHeight = (period.predictedNetWorth / maxValue) * 100;
-                const assetsHeight = (period.predictedAssets / maxValue) * 100;
-                const liabilitiesHeight = (period.predictedLiabilities / maxValue) * 100;
 
                 return (
                   <div key={idx} className="flex-1 flex flex-col justify-end group relative min-w-[40px]">

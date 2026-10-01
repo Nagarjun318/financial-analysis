@@ -1,6 +1,6 @@
 import React from 'react';
 import { Transaction } from '../types';
-import { BarChart3, Calendar, ArrowRightLeft, TrendingUp, PieChart, Activity, Sparkles } from 'lucide-react';
+import { Calendar, ArrowRightLeft, TrendingUp, Activity, Sparkles } from 'lucide-react';
 import { SpendingHeatmap } from './SpendingHeatmap';
 import { FinancialSankey } from './FinancialSankey';
 import { ComparativeSpending } from './ComparativeSpending';
@@ -11,10 +11,10 @@ import { ChartSuggestionWidget } from './ChartSuggestionWidget';
 
 interface AnalyticsPageProps {
     transactions: Transaction[];
-    userId: string;
+    userId?: string;
 }
 
-export const AnalyticsPage: React.FC<AnalyticsPageProps> = ({ transactions, userId }) => {
+export const AnalyticsPage: React.FC<AnalyticsPageProps> = ({ transactions }) => {
     const [dateRange, setDateRange] = React.useState('1y' as '1y' | '6m' | '3m' | 'all');
     const [chatPanelWidth, setChatPanelWidth] = React.useState(0);
     const [triggerMessage, setTriggerMessage] = React.useState(null as string | null);

@@ -1,8 +1,10 @@
 import React from 'react';
-import { X, Loader2, Sparkles } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import { Transaction } from '../types.ts';
 import { formatCurrency, formatDisplayDate } from '../utils.ts';
 import { predictTransactionCategoriesBatch } from '../services/geminiService.ts';
+import { showToast } from '../utils/toast';
+import { Modal, Button } from './ui';
 
 interface StagingModalProps {
   isOpen: boolean;
@@ -25,10 +27,6 @@ const StagingModal: React.FC<StagingModalProps> = ({
 }) => {
   const [isPredicting, setIsPredicting] = React.useState(false);
 
-  if (!isOpen) {
-    return null;
-  }
-
   const formatAmount = (amount: number, type: 'debit' | 'credit') => {
     const formatted = formatCurrency(Math.abs(amount));
     return type === 'debit' ? `-${formatted}` : formatted;
@@ -39,7 +37,6 @@ const StagingModal: React.FC<StagingModalProps> = ({
 
     setIsPredicting(true);
     try {
-      console.log(`Starting AI category prediction for ${transactions.length} transactions...`);
       
       // Prepare transactions for API (needs id, description, amount)
       // We use index as temporary ID since these aren't in DB yet
@@ -50,7 +47,6 @@ const StagingModal: React.FC<StagingModalProps> = ({
       }));
 
       const predictions = await predictTransactionCategoriesBatch(transactionsForAI);
-      console.log(`Received ${predictions.length} predictions`);
 
       // Update transactions with new AI categories
       const updatedTransactions = transactions.map((t, idx) => {
@@ -62,53 +58,56 @@ const StagingModal: React.FC<StagingModalProps> = ({
       });
 
       onTransactionsUpdate(updatedTransactions);
-      console.log('Successfully updated transactions with AI predictions');
     } catch (error) {
       console.error('Failed to predict categories:', error);
       
       // Show user-friendly error message
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      alert(`AI category prediction failed: ${errorMessage}\n\nTransactions will keep their current categories. Check console for details.`);
+      showToast(`AI category prediction failed: ${errorMessage}. Transactions kept their current categories.`, 'error');
     } finally {
       setIsPredicting(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-      <div className="glass-panel animated-border rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
-        <header className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-          <div className="flex items-center gap-4 overflow-hidden">
-            <h2 className="text-xl font-semibold rainbow-text truncate">
-              Review Transactions from <span className="font-bold">{fileName}</span>
-            </h2>
-            <button
-              onClick={handlePredictCategories}
-              disabled={isPredicting || isConfirming}
-              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded-lg hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors disabled:opacity-50"
-            >
-              {isPredicting ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Sparkles className="w-4 h-4" />
-              )}
-              {isPredicting ? 'Predicting...' : 'Auto-Categorize'}
-            </button>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1 rounded-full text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors ml-2"
-            aria-label="Close modal"
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={`Review Transactions${fileName ? ` from ${fileName}` : ''}`}
+      maxWidth="4xl"
+      headerAction={
+        <Button
+          variant="secondary"
+          size="sm"
+          loading={isPredicting}
+          disabled={isPredicting || isConfirming}
+          onClick={handlePredictCategories}
+        >
+          {!isPredicting && <Sparkles className="w-4 h-4" aria-hidden="true" />}
+          {isPredicting ? 'Predicting...' : 'Auto-Categorize'}
+        </Button>
+      }
+      footer={
+        <>
+          <Button variant="secondary" disabled={isConfirming} onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            loading={isConfirming}
+            disabled={isConfirming || isPredicting}
+            onClick={onConfirm}
+            className="w-48"
           >
-            <X className="h-6 w-6" />
-          </button>
-        </header>
-
-        <main className="p-6 overflow-y-auto">
-          <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-4">
-            Found {transactions.length} transactions. Please review them before adding to the dashboard.
-          </p>
-          <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-lg">
+            {isConfirming ? 'Confirming...' : 'Confirm Transactions'}
+          </Button>
+        </>
+      }
+    >
+      <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-4">
+        Found {transactions.length} transactions. Please review them before adding to the dashboard.
+      </p>
+      <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-lg">
             <table className="w-full text-left text-sm">
               <thead className="bg-gray-50 dark:bg-gray-800/60">
                 <tr>
@@ -146,27 +145,8 @@ const StagingModal: React.FC<StagingModalProps> = ({
                 ))}
               </tbody>
             </table>
-          </div>
-        </main>
-
-        <footer className="flex justify-end gap-4 p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/40 dark:bg-dark-bg/40 rounded-b-xl">
-          <button
-            onClick={onClose}
-            disabled={isConfirming}
-            className="px-4 py-2 bg-gray-200 dark:bg-gray-600 text-light-text dark:text-dark-text rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors disabled:opacity-70"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            disabled={isConfirming || isPredicting}
-            className="flex items-center justify-center gap-2 w-48 px-4 py-2 bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition-colors disabled:opacity-70"
-          >
-            {isConfirming ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Confirm Transactions'}
-          </button>
-        </footer>
       </div>
-    </div>
+    </Modal>
   );
 };
 

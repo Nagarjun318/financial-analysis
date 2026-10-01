@@ -1,5 +1,6 @@
 import { buildAnalytics } from '../domain/analytics/summarize.ts';
 import { Transaction, HomeService } from '../types.ts';
+import { apiFetch, FunctionApiError, isFunctionConfigured } from './apiClient.ts';
 
 // Lazy import to avoid bundling heavy client if not used.
 async function getGeminiClient() {
@@ -54,10 +55,13 @@ async function retryWithBackoff<T>(
 					throw error;
 				}
 			}
+			// Never hammer a rate-limited or auth-gated Function endpoint.
+			if (error instanceof FunctionApiError && (error.status === 429 || error.status === 401)) {
+				throw error;
+			}
 			
 			if (attempt < maxRetries - 1) {
 				const delay = initialDelay * Math.pow(2, attempt);
-				console.log(`Retry attempt ${attempt + 1}/${maxRetries} after ${delay}ms...`);
 				await new Promise(resolve => setTimeout(resolve, delay));
 			}
 		}
@@ -67,9 +71,71 @@ async function retryWithBackoff<T>(
 }
 
 /**
- * Call Gemini API directly using REST endpoint
+ * In-memory TTL cache for Gemini responses (Phase 3). Identical model+prompt
+ * pairs (forecasts, category batches, advice re-renders) reuse the last
+ * successful response for 10 minutes instead of spending API quota/latency.
+ * Bounded at 100 entries; use `clearGeminiCache()` in tests.
  */
-export async function callGeminiAPI(prompt: string, model: GeminiModel = GEMINI_MODELS.PRO_LATEST): Promise<APIResponse> {
+const GEMINI_CACHE_TTL_MS = 10 * 60 * 1000;
+const GEMINI_CACHE_MAX_ENTRIES = 100;
+const geminiCache = new Map<string, { result: APIResponse; expiresAt: number }>();
+
+export function clearGeminiCache(): void {
+	geminiCache.clear();
+}
+
+function readGeminiCache(model: string, prompt: string): APIResponse | null {
+	const hit = geminiCache.get(`${model}::${prompt}`);
+	if (!hit) return null;
+	if (hit.expiresAt <= Date.now()) {
+		geminiCache.delete(`${model}::${prompt}`);
+		return null;
+	}
+	return hit.result;
+}
+
+function writeGeminiCache(model: string, prompt: string, result: APIResponse): void {
+	if (geminiCache.size >= GEMINI_CACHE_MAX_ENTRIES) {
+		const oldest = geminiCache.keys().next();
+		if (!oldest.done) geminiCache.delete(oldest.value);
+	}
+	geminiCache.set(`${model}::${prompt}`, { result, expiresAt: Date.now() + GEMINI_CACHE_TTL_MS });
+}
+
+/**
+ * Server transport (Phase 4): the Function holds the keys, the browser only
+ * sends { model, prompt } with its user JWT. Falls back across models the
+ * same way the direct path does (pro → Gemma on provider 502s).
+ */
+async function completeViaServer(prompt: string, model: GeminiModel): Promise<APIResponse> {
+	return retryWithBackoff(async () => {
+		try {
+			const data = await apiFetch<{ text: string; via: string }>(
+				'/api/ai/complete',
+				{ method: 'POST', body: { model, prompt } }
+			);
+			if (!data?.text) throw new Error('Function returned no text.');
+			return { text: data.text, usedFallback: false };
+		} catch (err) {
+			if (
+				err instanceof FunctionApiError &&
+				err.status === 502 &&
+				model === GEMINI_MODELS.PRO_LATEST
+			) {
+				console.warn('Pro model issue via Function, falling back to Gemma 3 model');
+				const fallbackResult = await completeViaServer(prompt, GEMINI_MODELS.GEMMA_3);
+				return { ...fallbackResult, usedFallback: true, fallbackReason: 'Model overloaded' };
+			}
+			throw err;
+		}
+	});
+}
+
+/**
+ * Legacy direct REST path (dev fallback only — requires VITE_GEMINI_API_KEY,
+ * which is no longer shipped in production builds).
+ */
+async function completeDirect(prompt: string, model: GeminiModel): Promise<APIResponse> {
 	return retryWithBackoff(async () => {
 	const { apiKey } = await getGeminiClient();
 	const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
@@ -146,6 +212,20 @@ export async function callGeminiAPI(prompt: string, model: GeminiModel = GEMINI_
 	});
 }
 
+/**
+ * Call the AI backend: Function proxy when configured (production — keys stay
+ * server-side), direct REST only as a local-dev fallback.
+ */
+export async function callGeminiAPI(prompt: string, model: GeminiModel = GEMINI_MODELS.PRO_LATEST): Promise<APIResponse> {
+	const cached = readGeminiCache(model, prompt);
+	if (cached) return cached;
+	const result = isFunctionConfigured()
+		? await completeViaServer(prompt, model)
+		: await completeDirect(prompt, model);
+	writeGeminiCache(model, prompt, result);
+	return result;
+}
+
 export interface MonthlyInsight {
 	monthKeys: string[];
 	narrative: string;
@@ -164,8 +244,8 @@ export async function generateMonthlyInsight(transactions: Transaction[]): Promi
 	}
 	const last = months[months.length - 1];
 	const prev = months[months.length - 2];
-	let deltaIncome = prev ? (last.income - prev.income) : 0;
-	let deltaExpense = prev ? (last.expense - prev.expense) : 0;
+	const deltaIncome = prev ? (last.income - prev.income) : 0;
+	const deltaExpense = prev ? (last.expense - prev.expense) : 0;
 	const trendIncome = deltaIncome >= 0 ? 'increased' : 'decreased';
 	const trendExpense = deltaExpense >= 0 ? 'increased' : 'decreased';
 	const savingsRate = last.income > 0 ? ((last.savings / last.income) * 100).toFixed(2) : '0';
@@ -606,21 +686,24 @@ export async function predictTransactionCategory(
  * Processes in batches of 5 to avoid API limits
  */
 export async function predictTransactionCategoriesBatch(
-	transactions: Array<{ id: number; description: string; amount: number }>,
+	transactions: Array<{ id?: number; description: string; amount: number }>,
 	model: GeminiModel = GEMINI_MODELS.PRO_LATEST
 ): Promise<Array<{ id: number; ai_category: string }>> {
 	if (transactions.length === 0) return [];
+
+	// Normalize: callers may omit ids (e.g. unstaged rows); fall back to index.
+	const items = transactions.map((t, i) => ({ ...t, id: t.id ?? i }));
 
 	// Separate transactions that match static rules
 	const results: Array<{ id: number; ai_category: string }> = [];
 	const transactionsForAI: Array<{ id: number; description: string; amount: number }> = [];
 
-	transactions.forEach(t => {
+	transactions.forEach((t, i) => {
 		const staticCategory = applyStaticCategoryRules(t.description);
 		if (staticCategory) {
-			results.push({ id: t.id, ai_category: staticCategory });
+			results.push({ id: items[i].id, ai_category: staticCategory });
 		} else {
-			transactionsForAI.push(t);
+			transactionsForAI.push(items[i]);
 		}
 	});
 
@@ -633,14 +716,11 @@ export async function predictTransactionCategoriesBatch(
 	const BATCH_SIZE = 10;
 	const aiResults: Array<{ id: number; ai_category: string }> = [];
 	
-	console.log(`Processing ${transactionsForAI.length} transactions in batches of ${BATCH_SIZE}`);
 	
 	for (let i = 0; i < transactionsForAI.length; i += BATCH_SIZE) {
 		const batch = transactionsForAI.slice(i, i + BATCH_SIZE);
 		const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
-		const totalBatches = Math.ceil(transactionsForAI.length / BATCH_SIZE);
 		
-		console.log(`Processing batch ${batchNumber}/${totalBatches} (${batch.length} transactions)`);
 		
 		try {
 			const batchResults = await processSingleBatch(batch, model);
@@ -732,9 +812,7 @@ async function processSingleBatch(
 	Return ONLY the JSON array, no explanation.`;
 
 	try {
-		console.log(`Predicting categories for ${batch.length} transactions using ${model}`);
 		const apiResponse = await callGeminiAPI(prompt, model);
-		console.log('AI response received, parsing...');
 
 		// Extract JSON from response
 		const jsonMatch = apiResponse.text.match(/\[[\s\S]*\]/);
@@ -744,7 +822,6 @@ async function processSingleBatch(
 		}
 
 		const aiResults = JSON.parse(jsonMatch[0]);
-		console.log(`Successfully parsed ${aiResults.length} category predictions`);
 
 		// Validate results
 		if (!Array.isArray(aiResults)) {

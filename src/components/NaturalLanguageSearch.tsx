@@ -118,7 +118,7 @@ const NaturalLanguageSearch: React.FC<NaturalLanguageSearchProps> = ({
           {showModelSelector && (
             <div className="absolute right-0 top-full mt-2 w-56 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10 p-2">
               <div className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2 px-2">Select AI Model</div>
-              {Object.entries(GEMINI_MODELS).map(([key, value]) => (
+              {Object.entries(GEMINI_MODELS).map(([, value]) => (
                 <button
                   key={value}
                   type="button"
@@ -210,7 +210,7 @@ const NaturalLanguageSearch: React.FC<NaturalLanguageSearchProps> = ({
       {activeSearch && (
         <div className="p-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg">
           <p className="text-sm text-indigo-700 dark:text-indigo-300">
-            <span className="font-semibold">Search:</span> "{activeSearch}"
+            <span className="font-semibold">Search:</span> &quot;{activeSearch}&quot;
           </p>
         </div>
       )}

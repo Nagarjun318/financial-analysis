@@ -89,7 +89,7 @@ const HomePage: React.FC = () => {
           </div>
           <h3 className="text-xl font-bold bg-gradient-to-r from-cyan-600 to-blue-600 bg-clip-text text-transparent mb-3">Natural Language Search</h3>
           <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed">
-            Find transactions instantly by asking in plain English. "Show me all groceries over ₹5000 last month" - it just works!
+            Find transactions instantly by asking in plain English. &quot;Show me all groceries over ₹5000 last month&quot; - it just works!
           </p>
         </div>
       </section>
@@ -167,7 +167,7 @@ const HomePage: React.FC = () => {
             <span className="font-semibold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">Google Gemini AI</span>
           </div>
           <div className="glass-panel px-6 py-3 rounded-xl border border-gray-200 dark:border-gray-700">
-            <span className="font-semibold text-gray-700 dark:text-gray-300">Supabase</span>
+            <span className="font-semibold text-gray-700 dark:text-gray-300">Neon Postgres + Auth</span>
           </div>
           <div className="glass-panel px-6 py-3 rounded-xl border border-gray-200 dark:border-gray-700">
             <span className="font-semibold text-gray-700 dark:text-gray-300">React + TypeScript</span>
@@ -184,7 +184,7 @@ const HomePage: React.FC = () => {
           <span className="bg-gradient-to-r from-brand-primary to-purple-600 bg-clip-text text-transparent">Ready to Transform Your Life?</span>
         </h2>
         <p className="text-gray-600 dark:text-gray-300 mb-8 max-w-2xl mx-auto text-lg">
-          Start managing your finances and kitchen with the power of AI. It's free to get started!
+          Start managing your finances and kitchen with the power of AI. It&apos;s free to get started!
         </p>
         <button className="glass-panel animated-border px-10 py-4 rounded-xl font-semibold text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition-all flex items-center gap-2 mx-auto group">
           Start Your Journey

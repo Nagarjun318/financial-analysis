@@ -43,6 +43,17 @@ const ThemeSwitcher: React.FC = () => {
     setDropdownOpen(false);
   };
 
+  // Phase 6: stay in sync with the command-palette theme action, which writes
+  // localStorage + the `dark` class directly and announces via `app:theme`.
+  React.useEffect(() => {
+    const onExternalTheme = (e: Event) => {
+      const next = (e as CustomEvent).detail;
+      if (next === 'light' || next === 'dark') setTheme(next);
+    };
+    window.addEventListener('app:theme', onExternalTheme);
+    return () => window.removeEventListener('app:theme', onExternalTheme);
+  }, []);
+
   const getIcon = () => {
     switch (theme) {
       case 'light':

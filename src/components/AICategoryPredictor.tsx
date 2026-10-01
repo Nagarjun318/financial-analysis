@@ -2,7 +2,7 @@ import React from 'react';
 import { Transaction } from '../types';
 import { Sparkles, RefreshCw, Check, X, Info } from 'lucide-react';
 import { predictTransactionCategoriesBatch } from '../services/geminiService';
-import { updateTransactionAICategoriesBatch } from '../services/supabaseClient';
+import { updateTransactionAICategoriesBatch } from '../services/neonClient';
 
 interface AICategoryPredictorProps {
   transactions: Transaction[];
@@ -56,16 +56,16 @@ export const AICategoryPredictor: React.FC<AICategoryPredictorProps> = ({
         
         // Predict categories for this batch
         const predictions = await predictTransactionCategoriesBatch(
-          batch.map((t: Transaction) => ({ description: t.description, amount: t.amount })),
-          existingCategories
+          batch.map((t: Transaction) => ({ id: t.id, description: t.description, amount: t.amount }))
         );
+        const categoryById = new Map(predictions.map(p => [p.id, p.ai_category]));
 
-        // Prepare updates
-        batch.forEach((transaction: Transaction, idx: number) => {
+        // Prepare updates (match by id — result order is not input order)
+        batch.forEach((transaction: Transaction) => {
           if (transaction.id) {
             allUpdates.push({
               id: transaction.id,
-              ai_category: predictions[idx] || 'Uncategorized'
+              ai_category: categoryById.get(transaction.id) || 'Uncategorized'
             });
           }
         });
@@ -134,7 +134,7 @@ export const AICategoryPredictor: React.FC<AICategoryPredictorProps> = ({
           <ul className="list-disc list-inside space-y-1 ml-2">
             <li>AI analyzes transaction descriptions</li>
             <li>Predicts categories based on existing patterns</li>
-            <li>Saves predictions to "AI_Category" column</li>
+            <li>Saves predictions to &quot;AI_Category&quot; column</li>
             <li>Processes in batches for efficiency</li>
           </ul>
         </div>

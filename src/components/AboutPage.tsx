@@ -42,7 +42,7 @@ const AboutPage: React.FC = () => {
       {/* What We Built */}
       <section className="glass-panel p-10 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-xl">
         <h2 className="text-3xl font-bold text-center mb-8">
-          <span className="bg-gradient-to-r from-brand-primary to-purple-600 bg-clip-text text-transparent">What We've Built</span>
+          <span className="bg-gradient-to-r from-brand-primary to-purple-600 bg-clip-text text-transparent">What We&apos;ve Built</span>
         </h2>
         <div className="max-w-4xl mx-auto space-y-6">
           <p className="text-gray-600 dark:text-gray-300 leading-relaxed text-lg">
@@ -195,7 +195,7 @@ const AboutPage: React.FC = () => {
               Continuous Innovation
             </h3>
             <p className="text-gray-600 dark:text-gray-300 leading-relaxed">
-              We're constantly improving and adding new features based on the latest technology and user feedback to serve you better.
+              We&apos;re constantly improving and adding new features based on the latest technology and user feedback to serve you better.
             </p>
           </div>
         </div>
@@ -213,13 +213,13 @@ const AboutPage: React.FC = () => {
           </p>
           <p className="text-gray-600 dark:text-gray-300 leading-relaxed text-lg">
             What began as a simple expense tracker evolved into a comprehensive platform that combines financial intelligence
-            with kitchen management. By integrating Google's Gemini AI, we've created a system that not only tracks your
+            with kitchen management. By integrating Google&apos;s Gemini AI, we&apos;ve created a system that not only tracks your
             data but understands it, predicts trends, and provides actionable insights.
           </p>
           <p className="text-gray-600 dark:text-gray-300 leading-relaxed text-lg">
             Today, SmartLife Hub features natural language search, AI-powered categorization, predictive forecasting,
             an intelligent financial advisor chatbot, and an AI kitchen assistant that helps with meal planning and
-            grocery management. And we're just getting started.
+            grocery management. And we&apos;re just getting started.
           </p>
         </div>
       </section>
@@ -230,7 +230,7 @@ const AboutPage: React.FC = () => {
           <span className="bg-gradient-to-r from-brand-primary to-purple-600 bg-clip-text text-transparent">Questions or Feedback?</span>
         </h2>
         <p className="text-gray-600 dark:text-gray-300 mb-8 max-w-2xl mx-auto text-lg">
-          We'd love to hear from you! Whether you have questions, suggestions, or just want to say hi.
+          We&apos;d love to hear from you! Whether you have questions, suggestions, or just want to say hi.
         </p>
         <button className="glass-panel animated-border px-10 py-4 rounded-xl font-semibold text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition-all">
           Get in Touch

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { supabase } from '../services/supabaseClient';
-import { Loader2, X } from 'lucide-react';
+import { client as supabase } from '../services/neonClient';
+import { X } from 'lucide-react';
+import { Button } from './ui';
 
 interface AuthProps {
   isModal?: boolean;
@@ -19,7 +20,12 @@ const Auth: React.FC<AuthProps> = ({ isModal = false, onClose }) => {
     setError(null);
     setMessage(null);
     setLoading(true);
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (!supabase) {
+      setError('Auth not configured. Add Neon Auth env vars to your .env file.');
+      setLoading(false);
+      return;
+    }
+    const { data, error } = await (supabase as any).auth.signInWithPassword({ email, password });
     if (error) {
       setError(error.message);
     } else if (!data.session) {
@@ -38,7 +44,13 @@ const Auth: React.FC<AuthProps> = ({ isModal = false, onClose }) => {
     setError(null);
     setMessage(null);
     setLoading(true);
-    const { data, error } = await supabase.auth.signUp({ email, password });
+    // Neon Auth (Better Auth) requires a display name; derive one from email.
+    const displayName = email.split('@')[0] || 'User';
+    const { error } = await (supabase as any).auth.signUp({
+      email,
+      password,
+      options: { data: { displayName, name: displayName } },
+    });
     if (error) {
       setError(error.message);
     } else {
@@ -53,7 +65,12 @@ const Auth: React.FC<AuthProps> = ({ isModal = false, onClose }) => {
     setError(null);
     setMessage(null);
     setLoading(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    if (!supabase) {
+      setError('Auth not configured. Add Neon Auth env vars to your .env file.');
+      setLoading(false);
+      return;
+    }
+    const { error } = await (supabase as any).auth.resetPasswordForEmail(email, {
       redirectTo: window.location.origin + '/reset-password'
     });
     if (error) {
@@ -120,35 +137,40 @@ const Auth: React.FC<AuthProps> = ({ isModal = false, onClose }) => {
           {message && <p className="text-sm text-green-500 text-center">{message}</p>}
 
           <div className="flex flex-col gap-3">
-            <button
+            <Button
               type="submit"
+              variant="primary"
+              loading={loading}
               disabled={loading || !email || !password}
-              className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-brand-primary hover:bg-brand-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-primary disabled:opacity-50"
+              className="w-full"
             >
-              {loading ? <Loader2 className="animate-spin" /> : 'Sign In'}
-            </button>
-            <button
+              {loading ? 'Signing in...' : 'Sign In'}
+            </Button>
+            <Button
               onClick={handleSignUp}
               type="button"
+              variant="secondary"
+              loading={loading}
               disabled={loading || !email || !password}
-              className="w-full flex justify-center py-2 px-4 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-light-text dark:text-dark-text bg-transparent hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-primary disabled:opacity-50"
+              className="w-full"
             >
-              {loading ? <Loader2 className="animate-spin" /> : 'Create Account'}
-            </button>
-            <button
+              {loading ? 'Please wait...' : 'Create Account'}
+            </Button>
+            <Button
               onClick={handleResetPassword}
               type="button"
+              variant="ghost"
               disabled={loading || !email}
-              className="text-xs self-center text-brand-primary hover:underline disabled:opacity-50"
+              size="sm"
+              className="self-center"
             >
               Forgot password?
-            </button>
+            </Button>
           </div>
         </form>
       <div className="text-center text-xs text-light-text-secondary dark:text-dark-text-secondary">
-        <p>Don't have a Supabase project yet?</p>
-        <a href="https://supabase.com/" target="_blank" rel="noopener noreferrer" className="font-medium text-brand-primary hover:underline">Get started with Supabase</a>
-        <p className="mt-2">Make sure to create a `transactions` table in your database.</p>
+        <p>Accounts are stored in Neon Auth. Passwords from Supabase cannot transfer — please create a new account.</p>
+        <p className="mt-2">Make sure the <code>transactions</code> table exists in your Neon database (see NEON_SCHEMA.sql).</p>
       </div>
     </div>
   );

@@ -5,10 +5,11 @@ import { AIGoalAdvisor } from './AIGoalAdvisor';
 import { GoalsAdvisorChat } from './GoalsAdvisorChat';
 import { useGoals } from '../hooks/useGoals';
 import { suggestFinancialGoals, SuggestedGoal } from '../services/netWorthAI';
+import { EmptyState, Button } from './ui';
 import { deriveAssets, deriveLiabilities, buildNetWorthTimeline } from '../domain/networth/calculateNetWorth';
 
 interface GoalsPageProps {
-    userId: string;
+    userId?: string;
     transactions: Transaction[];
 }
 
@@ -360,28 +361,26 @@ const GoalsPage: React.FC<GoalsPageProps> = ({ userId, transactions }) => {
                 })}
 
                 {goals.length === 0 && (
-                    <div className="col-span-full text-center py-12 glass-panel rounded-2xl border-dashed border-2 border-gray-300 dark:border-gray-700">
-                        <div className="w-16 h-16 bg-gray-50 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <Target className="w-8 h-8 text-gray-400" />
-                        </div>
-                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">No Goals Yet</h3>
-                        <p className="text-gray-500 dark:text-gray-400 mb-6 max-w-md mx-auto">
-                            Start planning your financial future. Let AI suggest goals or create your own.
-                        </p>
-                        <div className="flex gap-3 justify-center">
-                            <button
+                    <div className="col-span-full glass-panel rounded-2xl border-dashed border-2 border-gray-300 dark:border-gray-700">
+                        <EmptyState
+                            icon={<Target className="w-16 h-16" aria-hidden="true" />}
+                            title="No Goals Yet"
+                            description="Start planning your financial future. Let AI suggest goals or create your own."
+                        />
+                        <div className="flex gap-3 justify-center pb-8">
+                            <Button
+                                variant="secondary"
                                 onClick={loadSuggestions}
-                                className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2"
                             >
-                                <Sparkles className="w-4 h-4" />
+                                <Sparkles className="w-4 h-4" aria-hidden="true" />
                                 Get AI Suggestions
-                            </button>
-                            <button
+                            </Button>
+                            <Button
+                                variant="primary"
                                 onClick={() => setIsAdding(true)}
-                                className="px-6 py-2 bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition-colors"
                             >
                                 Create Your First Goal
-                            </button>
+                            </Button>
                         </div>
                     </div>
                 )}

@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { MessageCircle, Send, Sparkles, X, Settings, Loader2, Bot, User, Wallet, Plus } from 'lucide-react';
+import { Send, X, Settings, Loader2, Bot, Wallet, Plus } from 'lucide-react';
 import { chatAboutNetWorth } from '../services/netWorthAI';
 import { Asset, Liability, NetWorthSnapshot } from '../domain/networth/calculateNetWorth';
 import { GEMINI_MODELS, GeminiModel } from '../services/geminiService';
@@ -41,7 +41,6 @@ export function NetWorthAdvisorChat({ assets, liabilities, timeline, onOpenChang
   const [isLoading, setIsLoading] = React.useState(false);
   const [selectedModel, setSelectedModel] = React.useState<GeminiModel>(GEMINI_MODELS.FLASH_LITE);
   const [showModelSelector, setShowModelSelector] = React.useState(false);
-  const [showSuggestions, setShowSuggestions] = React.useState(false);
 
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
   const modelSelectorRef = React.useRef<HTMLDivElement>(null);
@@ -85,46 +84,6 @@ export function NetWorthAdvisorChat({ assets, liabilities, timeline, onOpenChang
     onOpenChange?.(open && !isMobile ? width : 0);
   };
 
-  // Generate context-aware suggestions based on net worth data
-  const getSuggestions = React.useMemo(() => {
-    const totalAssets = assets.reduce((sum, a) => sum + a.currentValue, 0);
-    const totalLiabilities = liabilities
-      .filter(l => !l.name.includes('(Completed)'))
-      .reduce((sum, l) => sum + (l.principal || 0), 0);
-    const netWorth = totalAssets - totalLiabilities;
-    const debtRatio = totalAssets > 0 ? (totalLiabilities / totalAssets) * 100 : 0;
-
-    const suggestions: string[] = [];
-
-    // Base suggestions
-    if (messages.length <= 2) {
-      suggestions.push(
-        "What's my current financial health?",
-        "How can I grow my net worth?",
-        "Should I pay off debt or invest?",
-        "Analyze my asset allocation"
-      );
-    } else {
-      // Context-aware suggestions
-      if (debtRatio > 50) {
-        suggestions.push("How can I reduce my debt faster?");
-      }
-      if (assets.length < 3) {
-        suggestions.push("Should I diversify my assets?");
-      }
-      if (netWorth > 0) {
-        suggestions.push("What's the best way to grow my net worth?");
-      }
-      suggestions.push(
-        "Give me personalized investment advice",
-        "What are my biggest financial risks?",
-        "How am I doing compared to others?",
-        "What should be my next financial move?"
-      );
-    }
-
-    return suggestions.slice(0, 4);
-  }, [assets, liabilities, messages.length]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -148,12 +107,6 @@ export function NetWorthAdvisorChat({ assets, liabilities, timeline, onOpenChang
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showModelSelector]);
 
-  // Show suggestions when chat is opened and empty
-  React.useEffect(() => {
-    if (isOpen && messages.length <= 1 && !input.trim()) {
-      setShowSuggestions(true);
-    }
-  }, [isOpen, messages.length, input]);
 
   const handleSend = async (customMessage?: string) => {
     const messageText = customMessage || input.trim();
@@ -169,7 +122,6 @@ export function NetWorthAdvisorChat({ assets, liabilities, timeline, onOpenChang
     setMessages((prev: Message[]) => [...prev, userMessage]);
     setInput('');
     setIsLoading(true);
-    setShowSuggestions(false);
 
     try {
       const response = await chatAboutNetWorth(

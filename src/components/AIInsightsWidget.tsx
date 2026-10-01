@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles, TrendingUp, AlertCircle, Lightbulb } from 'lucide-react';
+import { TrendingUp, AlertCircle, Lightbulb } from 'lucide-react';
 import { Transaction } from '../types';
 import { generateDashboardInsights } from '../services/geminiService';
 

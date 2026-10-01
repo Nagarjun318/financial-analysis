@@ -1,29 +1,37 @@
-import React from 'react';
-import { supabase, isSupabaseConfigured } from './services/supabaseClient';
+import React, { Suspense } from 'react';
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { client as supabase, isNeonConfigured as isSupabaseConfigured } from './services/neonClient';
 import SetupInstructions from './components/SetupInstructions.tsx';
-import { Session } from '@supabase/supabase-js';
+import type { NeonSession as Session } from './services/neonClient';
 import Sidebar from './components/Sidebar.tsx';
-import HomePage from './components/HomePage.tsx';
-// import DocumentsPage from './components/DocumentsPage.tsx';
-import AboutPage from './components/AboutPage.tsx';
-import ServicesPage from './components/ServicesPage.tsx';
-import InvestmentPage from './components/InvestmentPage.tsx';
-import GroceriesPage from './components/GroceriesPage.tsx';
-import NetWorthPage from './components/NetWorthPage.tsx';
-import GoalsPage from './components/GoalsPage.tsx';
+import OnboardingGuide, { isOnboardingDismissed } from './components/OnboardingGuide.tsx';
+import CommandPalette from './components/CommandPalette.tsx';
+import {
+  HomePage,
+  AboutPage,
+  ServicesPage,
+  Dashboard,
+  InvestmentPage,
+  GroceriesPage,
+  NetWorthPage,
+  GoalsPage,
+  AnalyticsPage,
+  sectionFromPath,
+  pathForSection,
+  SectionId,
+} from './app/sections';
 import Auth from './components/Auth';
-import Dashboard from './components/Dashboard';
 import StagingModal from './components/StagingModal';
 import EditTransactionModal from './components/EditTransactionModal';
-import { AnalyticsPage } from './components/AnalyticsPage';
 import { Transaction, AnalysisResult } from './types';
-import { processXlsData, analyzeTransactions, getCategory } from './utils';
+import { processXlsData, analyzeTransactions } from './utils';
 import { useTransactions } from './hooks/useTransactions.ts';
 import { makeTransactionKey, filterDuplicateStaged } from './domain/transactions/dedupe.ts';
-import DocumentsPage from './components/DocumentsPage.tsx';
 import WeatherBackground from './components/WeatherBackground.tsx';
+import ToastHost from './components/ToastHost.tsx';
+import { Skeleton } from './components/ui';
+import { showToast } from './utils/toast';
 import { getWeatherData } from './services/weatherService';
-import { WeatherProvider, useWeather } from './contexts/WeatherContext.tsx';
 
 const emptyAnalysisResult: AnalysisResult = {
   summary: { totalIncome: 0, totalExpenses: 0, netSavings: 0 },
@@ -32,26 +40,47 @@ const emptyAnalysisResult: AnalysisResult = {
 
 const App: React.FC = () => {
   const [session, setSession] = React.useState(null as Session | null);
-  const [currentSection, setCurrentSection] = React.useState('home');
-  const [analysisResult, setAnalysisResult] = React.useState(emptyAnalysisResult as AnalysisResult);
+  const location = useLocation();
+  const navigate = useNavigate();
+  // URL is the source of truth for the active view (deep-linkable, back-button works).
+  const currentSection = sectionFromPath(location.pathname);
+  const setCurrentSection = React.useCallback(
+    (section: SectionId | 'auth') => {
+      if (section === 'auth') return;
+      navigate(pathForSection(section));
+    },
+    [navigate]
+  );
   const [loading, setLoading] = React.useState(true);
   const [isUploading, setIsUploading] = React.useState(false);
   const [error, setError] = React.useState(null as string | null);
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
   const [showAuthModal, setShowAuthModal] = React.useState(false);
+  // Phase 6: command palette (Cmd/Ctrl+K).
+  const [paletteOpen, setPaletteOpen] = React.useState(false);
+  React.useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen((open) => !open);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
   const [weatherCondition, setWeatherCondition] = React.useState<string>();
   const [weatherTemperature, setWeatherTemperature] = React.useState<number>();
 
   // Fetch weather on initial load
-  React.useEffect(() => {
-    handleWeatherRefresh();
-  }, []);
+  // Weather is loaded on demand via the sidebar refresh button only —
+  // never auto-requested on mount (browsers may block it and the
+  // permission prompt is hostile as a first impression).
 
   // Weather refresh handler
   const handleWeatherRefresh = async () => {
     try {
       if (!navigator.geolocation) {
-        alert('Geolocation is not supported by your browser');
+        showToast('Geolocation is not supported by your browser', 'error');
         return;
       }
 
@@ -60,7 +89,7 @@ const App: React.FC = () => {
           const { latitude, longitude } = position.coords;
           const location = `${latitude},${longitude}`;
           const weather = await getWeatherData(location);
-          
+
           if (weather && weather.temperature !== undefined) {
             setWeatherCondition(weather.condition);
             setWeatherTemperature(weather.temperature);
@@ -68,18 +97,17 @@ const App: React.FC = () => {
         },
         (error) => {
           console.error('Error getting location:', error);
-          alert('Could not get your location. Please enable location services.');
+          showToast('Could not get your location. Please enable location services.', 'error');
         }
       );
     } catch (error) {
       console.error('Error refreshing weather:', error);
-      alert('Failed to refresh weather data');
+      showToast('Failed to refresh weather data', 'error');
     }
   };
 
   // Debug weather state changes
   React.useEffect(() => {
-    console.log('[App] Weather updated:', { weatherCondition, weatherTemperature });
   }, [weatherCondition, weatherTemperature]);
 
   // Staging transactions from file upload
@@ -92,36 +120,57 @@ const App: React.FC = () => {
   const [editingTransaction, setEditingTransaction] = React.useState(null as Transaction | null);
   const [isEditModalOpen, setIsEditModalOpen] = React.useState(false);
 
-  // Supabase auth logic
+  // Neon auth logic (Supabase-compatible shapes via SupabaseAuthAdapter).
+  // Defensive: never let a session-listener shape mismatch crash the app.
   React.useEffect(() => {
     if (!supabase) return;
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-    });
+    let cancelled = false;
+    (supabase as any).auth.getSession().then(({ data }: any) => {
+      if (!cancelled) setSession(data?.session ?? null);
+    }).catch((e: any) => console.warn('[auth] getSession failed', e));
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-    });
+    let unsubscribe: (() => void) | undefined;
+    try {
+      const result = (supabase as any).auth.onAuthStateChange((_event: string, session: Session | null) => {
+        setSession(session);
+      });
+      const sub = result?.data?.subscription ?? result?.subscription;
+      if (sub && typeof sub.unsubscribe === 'function') {
+        unsubscribe = () => {
+          try { sub.unsubscribe(); } catch { /* ignore */ }
+        };
+      } else {
+        console.warn('[auth] onAuthStateChange returned unexpected shape', result);
+      }
+    } catch (e) {
+      console.warn('[auth] onAuthStateChange not available', e);
+    }
 
-    return () => subscription.unsubscribe();
+    return () => {
+      cancelled = true;
+      try { unsubscribe?.(); } catch { /* ignore */ }
+    };
   }, []);
 
 
   const { transactions, isLoading, insert, update, remove, refetch } = useTransactions(session?.user?.id);
 
+  // Phase 3: memoize the expensive derived analysis (summary + forecast +
+  // anomalies over up to ~6.6k rows) so it recomputes only when the
+  // transaction array identity actually changes — not on every unrelated
+  // render (sidebar toggle, weather, modal state, …).
+  const analysisResult = React.useMemo(
+    () => (session && !isLoading ? analyzeTransactions(transactions) : emptyAnalysisResult),
+    [session, isLoading, transactions]
+  );
+
   React.useEffect(() => {
     if (!session) {
-      setAnalysisResult(emptyAnalysisResult);
       setLoading(false);
       return;
     }
-    if (isLoading) {
-      setLoading(true);
-      return;
-    }
-    setLoading(false);
-    setAnalysisResult(analyzeTransactions(transactions));
-  }, [session, isLoading, transactions]);
+    setLoading(isLoading);
+  }, [session, isLoading]);
 
   const handleFileUpload = async (file: File) => {
     setIsUploading(true);
@@ -247,48 +296,104 @@ const App: React.FC = () => {
   const handleSignOut = async () => {
     setError(null);
     try {
-      // Clear Supabase session from all storage locations manually
-      // This avoids 403 errors from the signOut API
+      // Try provider sign-out first (Neon Auth), then clear local state.
+      try {
+        await (supabase as any)?.auth?.signOut?.();
+      } catch {
+        // ignore - fall through to manual cleanup
+      }
+      // Clear auth session from all storage locations manually
       if (typeof window !== 'undefined') {
         // Clear from localStorage
         Object.keys(localStorage)
-          .filter(k => k.toLowerCase().includes('supabase'))
+          .filter(k => {
+            const l = k.toLowerCase();
+            return l.includes('supabase') || l.includes('neon') || l.includes('better-auth') || k.includes('sb-');
+          })
           .forEach(k => localStorage.removeItem(k));
 
         // Clear from sessionStorage
         Object.keys(sessionStorage)
-          .filter(k => k.toLowerCase().includes('supabase'))
+          .filter(k => {
+            const l = k.toLowerCase();
+            return l.includes('supabase') || l.includes('neon') || l.includes('better-auth') || k.includes('sb-');
+          })
           .forEach(k => sessionStorage.removeItem(k));
 
-        // Clear Supabase cookies
+        // Clear auth cookies
         document.cookie.split(';').forEach(cookie => {
           const cookieName = cookie.split('=')[0].trim();
-          if (cookieName.toLowerCase().includes('supabase') || cookieName.includes('sb-')) {
+          const l = cookieName.toLowerCase();
+          if (l.includes('supabase') || l.includes('neon') || l.includes('better-auth') || cookieName.includes('sb-')) {
             document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
             document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname};`;
           }
         });
       }
 
-      // Clear application state
+      // Clear application state (analysis derives from session, so it empties itself)
       setSession(null);
-      setAnalysisResult(emptyAnalysisResult);
-      setCurrentSection('home');
+      navigate(pathForSection('home'));
     } catch (e: any) {
       console.warn('[signout]', e);
       // Ensure session is cleared even if there's an error
       setSession(null);
-      setAnalysisResult(emptyAnalysisResult);
-      setCurrentSection('home');
+      navigate(pathForSection('home'));
     }
   };
+
+  // Per-route document title (cheap SEO/UX win; full meta/OG is Phase 6).
+  // Must sit before the early return below (rules-of-hooks).
+  React.useEffect(() => {
+    const titles: Record<SectionId, string> = {
+      home: 'Home',
+      about: 'About',
+      services: 'Services',
+      finance: 'Finance',
+      investment: 'Investments',
+      groceries: 'Groceries',
+      networth: 'Net Worth',
+      goals: 'Goals',
+      analytics: 'Analytics',
+    };
+    document.title = `${titles[currentSection] ?? 'Home'} · FinanceHub`;
+  }, [currentSection]);
 
   if (!isSupabaseConfigured) {
     return <SetupInstructions />;
   }
 
+  const loadingLabels: Record<string, string> = {
+    finance: 'Loading transactions...',
+    home: 'Loading your dashboard...',
+    about: 'Loading about page...',
+    services: 'Loading services...',
+    investment: 'Loading investment data...',
+    groceries: 'Loading groceries...',
+    networth: 'Loading net worth overview...',
+    goals: 'Loading goals...',
+    analytics: 'Loading analytics...',
+  };
+  const loadingLabel = loadingLabels[currentSection] ?? 'Loading...';
+
+  const routeFallback = (
+    <div className="mx-auto max-w-3xl space-y-4 py-10" role="status" aria-label={loadingLabel}>
+      <p className="text-center text-lg font-medium text-gray-600 dark:text-gray-300">
+        {loadingLabel}
+      </p>
+      <Skeleton variant="card" />
+      <Skeleton variant="text" lines={4} />
+    </div>
+  );
+
   return (
     <div className="min-h-screen text-light-text dark:text-dark-text font-sans relative">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[60] focus:bg-brand-primary focus:text-white focus:px-4 focus:py-2 focus:rounded-md"
+      >
+        Skip to content
+      </a>
       {/* Weather Background */}
       <WeatherBackground 
         condition={weatherCondition} 
@@ -297,95 +402,106 @@ const App: React.FC = () => {
       
       <Sidebar
         currentSection={currentSection}
-        onSectionChange={(section) => {
+        onSectionChange={(section: string) => {
           if (section === 'auth' && !session) {
             setShowAuthModal(true);
           } else {
-            setCurrentSection(section);
+            setCurrentSection(section as SectionId | 'auth');
           }
         }}
-        userEmail={session?.user?.email}
+        userEmail={session?.user?.email ?? undefined}
         onSignOut={session ? handleSignOut : undefined}
         isOpen={isSidebarOpen}
         onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
+        onOpenPalette={() => setPaletteOpen(true)}
         weatherCondition={weatherCondition}
         weatherTemperature={weatherTemperature}
         onWeatherRefresh={handleWeatherRefresh}
       />
 
       <div className={`transition-all duration-300 ease-in-out ${isSidebarOpen ? 'md:ml-64' : 'md:ml-20'}`}>
-        <main className="container mx-auto p-4 sm:p-6 lg:p-8">
+        <main id="main-content" className="container mx-auto p-4 sm:p-6 lg:p-8">
           {loading ? (
-            <div className="flex justify-center items-center h-[60vh]">
-              <p className="text-lg font-medium text-gray-600 dark:text-gray-300 animate-pulse">
-                {currentSection === 'finance'
-                  ? 'Loading transactions...'
-                  : currentSection === 'home'
-                    ? 'Loading your dashboard...'
-                    : currentSection === 'about'
-                      ? 'Loading about page...'
-                      : currentSection === 'services'
-                        ? 'Loading services...'
-                        : currentSection === 'investment'
-                          ? 'Loading investment data...'
-                          : currentSection === 'groceries'
-                            ? 'Loading groceries...'
-                            : currentSection === 'networth'
-                              ? 'Loading net worth overview...'
-                              : currentSection === 'goals'
-                                ? 'Loading goals...'
-                                : currentSection === 'analytics'
-                                  ? 'Loading analytics...'
-                                  : 'Loading...'}
-              </p>
-            </div>
+            routeFallback
           ) : (
             <>
+              {/* Phase 6: first-run guide for new signups with no data yet. */}
+              {session &&
+                transactions.length === 0 &&
+                currentSection === 'home' &&
+                !isOnboardingDismissed(session.user.id) && (
+                  <div className="container mx-auto px-4 pt-8">
+                    <OnboardingGuide
+                      userId={session.user.id}
+                      onUpload={() => navigate(pathForSection('finance'))}
+                    />
+                  </div>
+                )}
               <div className="container mx-auto px-4 py-8">
-                {currentSection === 'home' && <HomePage />}
-                {currentSection === 'about' && <AboutPage />}
-                {currentSection === 'services' && <ServicesPage userId={session?.user?.id} />}
-                {currentSection === 'finance' && (
-                  <Dashboard
-                    analysisResult={analysisResult}
-                    onFileUpload={handleFileUpload}
-                    isUploading={isUploading}
-                    onEditTransaction={handleEditTransaction}
-                    onDeleteTransaction={handleDeleteTransaction}
-                    onRefreshData={refetch}
-                    userId={session?.user?.id || ''}
-                    isLoggedIn={!!session}
-                  />
-                )}
-                {currentSection === 'investment' && <InvestmentPage userId={session?.user?.id} />}
-                {currentSection === 'groceries' && (
-                  <GroceriesPage 
-                    userId={session?.user?.id} 
-                    onWeatherUpdate={(condition, temp) => {
-                      setWeatherCondition(condition);
-                      setWeatherTemperature(temp);
-                    }}
-                  />
-                )}
-                {currentSection === 'networth' && (
-                  <NetWorthPage
-                    transactions={analysisResult.transactions}
-                    userId={session?.user?.id}
-                  />
-                )}
-                {currentSection === 'goals' && (
-                  <GoalsPage
-                    userId={session?.user?.id}
-                    transactions={analysisResult.transactions}
-                  />
-                )}
-                {currentSection === 'analytics' && (
-                  <AnalyticsPage
-                    transactions={analysisResult.transactions}
-                    userId={session?.user?.id}
-                  />
-                )}
-                {currentSection === 'documents' && <DocumentsPage session={session} />}
+                <Suspense fallback={routeFallback}>
+                  <Routes>
+                    <Route index element={<HomePage />} />
+                    <Route path="home" element={<Navigate to="/" replace />} />
+                    <Route path="about" element={<AboutPage />} />
+                    <Route path="services" element={<ServicesPage userId={session?.user?.id} />} />
+                    <Route
+                      path="finance"
+                      element={
+                        <Dashboard
+                          analysisResult={analysisResult}
+                          onFileUpload={handleFileUpload}
+                          isUploading={isUploading}
+                          onEditTransaction={handleEditTransaction}
+                          onDeleteTransaction={handleDeleteTransaction}
+                          onRefreshData={refetch}
+                          userId={session?.user?.id || ''}
+                          isLoggedIn={!!session}
+                        />
+                      }
+                    />
+                    <Route path="investment" element={<InvestmentPage userId={session?.user?.id} />} />
+                    <Route
+                      path="groceries"
+                      element={
+                        <GroceriesPage
+                          userId={session?.user?.id}
+                          onWeatherUpdate={(condition, temp) => {
+                            setWeatherCondition(condition);
+                            setWeatherTemperature(temp);
+                          }}
+                        />
+                      }
+                    />
+                    <Route
+                      path="networth"
+                      element={
+                        <NetWorthPage
+                          transactions={analysisResult.transactions}
+                          userId={session?.user?.id}
+                        />
+                      }
+                    />
+                    <Route
+                      path="goals"
+                      element={
+                        <GoalsPage
+                          userId={session?.user?.id}
+                          transactions={analysisResult.transactions}
+                        />
+                      }
+                    />
+                    <Route
+                      path="analytics"
+                      element={
+                        <AnalyticsPage
+                          transactions={analysisResult.transactions}
+                          userId={session?.user?.id}
+                        />
+                      }
+                    />
+                    <Route path="*" element={<Navigate to="/" replace />} />
+                  </Routes>
+                </Suspense>
               </div>
             </>
           )}
@@ -397,6 +513,7 @@ const App: React.FC = () => {
               </div>
             </div>
           }
+          <ToastHost />
         </main>
 
         <StagingModal
@@ -422,6 +539,13 @@ const App: React.FC = () => {
         {showAuthModal && !session && (
           <Auth isModal={true} onClose={() => setShowAuthModal(false)} />
         )}
+
+        <CommandPalette
+          open={paletteOpen}
+          onClose={() => setPaletteOpen(false)}
+          onSignOut={session ? handleSignOut : undefined}
+          isLoggedIn={!!session}
+        />
       </div>
     </div>
   );

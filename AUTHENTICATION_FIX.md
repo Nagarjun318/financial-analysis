@@ -47,17 +47,9 @@ The Investment and NetWorth pages were loading data without proper authenticatio
 
 ## Database Migration Required
 
-Run the following SQL in your Supabase SQL Editor:
-
-```sql
--- See ADD_USER_ID_TO_INVESTMENTS.sql for complete migration
-ALTER TABLE investments 
-ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
-
-CREATE INDEX IF NOT EXISTS idx_investments_user_id ON investments(user_id);
-
--- Update RLS policies (see file for complete policies)
-```
+> Historical note: this migration already ran during the Neon migration.
+> The `investments.user_id` column exists in `NEON_SCHEMA.sql` (TEXT,
+> RLS via `auth.user_id()`). No action needed.
 
 ## Testing Checklist
 - [ ] Run the database migration in Supabase

@@ -1,64 +1,65 @@
-import React from 'react';
-import { supabase } from '../services/supabaseClient';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { client as neonClient, isNeonConfigured } from '../services/neonClient';
 import { Liability } from '../domain/networth/calculateNetWorth';
 
+interface LiabilityRow {
+  id: string;
+  name: string;
+  type: string;
+  principal: string | number | null;
+  opening_principal: string | number | null;
+  current_principal: string | number | null;
+  interest_rate_annual: string | number | null;
+  monthly_emi: string | number | null;
+  extra_payment_monthly: string | number | null;
+  start_date: string | null;
+  updated_at: string | null;
+}
+
+const num = (v: string | number | null): number => parseFloat(String(v ?? 0)) || 0;
+
+const mapRow = (row: LiabilityRow): Liability => ({
+  id: row.id,
+  name: row.name,
+  type: row.type as Liability['type'],
+  principal: num(row.principal) || num(row.opening_principal),
+  // Keep old fields for backward compatibility
+  openingPrincipal: num(row.opening_principal) || num(row.principal),
+  currentPrincipal: parseFloat(String(row.current_principal ?? '')),
+  interestRateAnnual: num(row.interest_rate_annual),
+  monthlyEMI: num(row.monthly_emi),
+  extraPaymentMonthly: num(row.extra_payment_monthly),
+  startDate: row.start_date ?? '',
+  lastUpdated: row.updated_at ?? undefined,
+});
+
+export const LIABILITIES_QUERY_KEY = ['liabilities'];
+
 export function useLiabilities(userId: string | undefined) {
-  const [liabilities, setLiabilities] = React.useState([]);
-  const [isLoading, setIsLoading] = React.useState(true);
-  const [error, setError] = React.useState(null);
+  const queryClient = useQueryClient();
 
-  const fetchLiabilities = async () => {
-    if (!userId || !supabase) {
-      setLiabilities([]);
-      setIsLoading(false);
-      return;
-    }
-
-    try {
-      setIsLoading(true);
-      const { data, error: fetchError } = await supabase
+  const liabilitiesQuery = useQuery({
+    queryKey: [...LIABILITIES_QUERY_KEY, userId],
+    enabled: Boolean(userId) && isNeonConfigured,
+    queryFn: async (): Promise<Liability[]> => {
+      if (!userId || !isNeonConfigured) return [];
+      const { data, error: fetchError } = await (neonClient as any)
         .from('liabilities')
         .select('*')
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
-
       if (fetchError) throw fetchError;
+      return ((data || []) as LiabilityRow[]).map(mapRow);
+    },
+  });
 
-      const mappedLiabilities: Liability[] = (data || []).map(row => ({
-        id: row.id,
-        name: row.name,
-        type: row.type,
-        principal: parseFloat(row.principal) || parseFloat(row.opening_principal) || 0,
-        // Keep old fields for backward compatibility
-        openingPrincipal: parseFloat(row.opening_principal) || parseFloat(row.principal) || 0,
-        currentPrincipal: parseFloat(row.current_principal),
-        interestRateAnnual: parseFloat(row.interest_rate_annual) || 0,
-        monthlyEMI: parseFloat(row.monthly_emi) || 0,
-        extraPaymentMonthly: parseFloat(row.extra_payment_monthly) || 0,
-        startDate: row.start_date,
-        lastUpdated: row.updated_at,
-      }));
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: LIABILITIES_QUERY_KEY });
 
-      setLiabilities(mappedLiabilities);
-      setError(null);
-    } catch (err: any) {
-      console.error('Error fetching liabilities:', err);
-      setError(err.message);
-      setLiabilities([]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  React.useEffect(() => {
-    fetchLiabilities();
-  }, [userId]);
-
-  const insertLiability = async (liability: Omit<Liability, 'id'>) => {
-    if (!userId || !supabase) return;
-
-    try {
-      const { error: insertError } = await supabase
+  const insertMutation = useMutation({
+    mutationFn: async (liability: Omit<Liability, 'id'>) => {
+      if (!userId) throw new Error('Missing user id');
+      const { error: insertError } = await (neonClient as any)
         .from('liabilities')
         .insert({
           user_id: userId,
@@ -72,21 +73,15 @@ export function useLiabilities(userId: string | undefined) {
           extra_payment_monthly: liability.extraPaymentMonthly || 0,
           start_date: liability.startDate,
         });
-
       if (insertError) throw insertError;
-      await fetchLiabilities();
-    } catch (err: any) {
-      console.error('Error inserting liability:', err);
-      setError(err.message);
-      throw err;
-    }
-  };
+    },
+    onSuccess: invalidate,
+  });
 
-  const updateLiability = async (id: string, updates: Partial<Liability>) => {
-    if (!userId || !supabase) return;
-
-    try {
-      const updateData: any = {};
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, updates }: { id: string; updates: Partial<Liability> }) => {
+      if (!userId) throw new Error('Missing user id');
+      const updateData: Record<string, unknown> = {};
       if (updates.name !== undefined) updateData.name = updates.name;
       if (updates.type !== undefined) updateData.type = updates.type;
       if (updates.principal !== undefined) {
@@ -98,54 +93,38 @@ export function useLiabilities(userId: string | undefined) {
       if (updates.monthlyEMI !== undefined) updateData.monthly_emi = updates.monthlyEMI;
       if (updates.extraPaymentMonthly !== undefined) updateData.extra_payment_monthly = updates.extraPaymentMonthly;
       if (updates.startDate !== undefined) updateData.start_date = updates.startDate;
-
       updateData.updated_at = new Date().toISOString();
-
-      const { error: updateError } = await supabase
+      const { error: updateError } = await (neonClient as any)
         .from('liabilities')
         .update(updateData)
         .eq('id', id)
         .eq('user_id', userId);
-
       if (updateError) throw updateError;
-      
-      // Optimistic update - update local state without refetch
-      setLiabilities((prev: any) => prev.map((l: any) => l.id === id ? { ...l, ...updates } : l));
-    } catch (err: any) {
-      console.error('Error updating liability:', err);
-      setError(err.message);
-      // On error, refetch to get correct state
-      await fetchLiabilities();
-      throw err;
-    }
-  };
+    },
+    onSuccess: invalidate,
+  });
 
-  const deleteLiability = async (id: string) => {
-    if (!userId || !supabase) return;
-
-    try {
-      const { error: deleteError } = await supabase
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      if (!userId) throw new Error('Missing user id');
+      const { error: deleteError } = await (neonClient as any)
         .from('liabilities')
         .delete()
         .eq('id', id)
         .eq('user_id', userId);
-
       if (deleteError) throw deleteError;
-      await fetchLiabilities();
-    } catch (err: any) {
-      console.error('Error deleting liability:', err);
-      setError(err.message);
-      throw err;
-    }
-  };
+    },
+    onSuccess: invalidate,
+  });
 
   return {
-    liabilities,
-    isLoading,
-    error,
-    refetch: fetchLiabilities,
-    insertLiability,
-    updateLiability,
-    deleteLiability,
+    liabilities: liabilitiesQuery.data ?? [],
+    isLoading: liabilitiesQuery.isLoading,
+    error: liabilitiesQuery.error ? (liabilitiesQuery.error as Error).message : null,
+    refetch: liabilitiesQuery.refetch,
+    insertLiability: insertMutation.mutateAsync,
+    updateLiability: (id: string, updates: Partial<Liability>) =>
+      updateMutation.mutateAsync({ id, updates }),
+    deleteLiability: deleteMutation.mutateAsync,
   };
 }

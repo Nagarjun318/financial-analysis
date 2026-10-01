@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
+import { client as supabase, isNeonConfigured as isSupabaseConfigured } from '../services/neonClient';
 
 export interface CategoryBudgetRecord {
   id?: number;

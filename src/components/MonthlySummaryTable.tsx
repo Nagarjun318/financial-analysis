@@ -5,6 +5,7 @@ import { Sparkles } from 'lucide-react';
 // Replaced localStorage budgets with Supabase-backed category budgets
 import { useCategoryBudgets, computeCategoryBudgetVariance } from '../hooks/useCategoryBudgets.ts';
 import { suggestCategoryBudget } from '../services/geminiService.ts';
+import { showToast } from '../utils/toast';
 
 interface MonthlySummaryTableProps {
     userId: string;
@@ -35,7 +36,6 @@ const MonthlySummaryTable: React.FC<MonthlySummaryTableProps> = ({ userId, trans
     const [selectedYear, setSelectedYear] = React.useState(new Date().getFullYear().toString());
     const [selectedCategory, setSelectedCategory] = React.useState('All');
     // Supabase-backed budgets
-    const sessionUserId = null; // Placeholder: supply actual user id from higher-level context or props if needed
     const { budgets, saveBudget, removeBudget, loading: budgetsLoading } = useCategoryBudgets(userId);
     const [budgetInput, setBudgetInput] = React.useState('');
     const [isAISuggesting, setIsAISuggesting] = React.useState(false);
@@ -172,11 +172,11 @@ const MonthlySummaryTable: React.FC<MonthlySummaryTableProps> = ({ userId, trans
             // Set the suggested budget in the input
             setBudgetInput(suggestion.suggestedBudget.toString());
 
-            // Show reasoning in a toast or alert
-            alert(`💡 AI Suggestion (${suggestion.confidence} confidence):\n\n₹${suggestion.suggestedBudget.toLocaleString('en-IN')}\n\n${suggestion.reasoning}`);
+            // Show reasoning in a toast
+            showToast(`AI Suggestion (${suggestion.confidence} confidence): ₹${suggestion.suggestedBudget.toLocaleString('en-IN')} — ${suggestion.reasoning}`, 'info', 8000);
         } catch (error) {
             console.error('AI budget suggestion failed:', error);
-            alert('Failed to get AI suggestion. Please try again.');
+            showToast('Failed to get AI suggestion. Please try again.', 'error');
         } finally {
             setIsAISuggesting(false);
         }
@@ -281,10 +281,6 @@ const MonthlySummaryTable: React.FC<MonthlySummaryTableProps> = ({ userId, trans
 
                             const expenseRatioClasses = row.expenseRatio > 0.6
                                 ? 'text-red-700 dark:text-red-400 font-semibold'
-                                : '';
-
-                            const savingsRatioClasses = row.savingsRatio > 0.4
-                                ? 'text-green-700 dark:text-green-300 font-semibold'
                                 : '';
 
                             const variance = selectedCategory !== 'All' ? computeCategoryBudgetVariance(row.key, selectedCategory, filteredTransactions, budgets) : null;

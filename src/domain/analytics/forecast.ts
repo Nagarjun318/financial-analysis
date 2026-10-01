@@ -36,7 +36,6 @@ export function buildForecast(
 
   const monthsIncome = monthly.map(m => m.income);
   const monthsExpense = monthly.map(m => m.expense);
-  const monthsSavings = monthly.map(m => m.savings);
 
   const projectedIncome = movingAverage(monthsIncome, window) ?? 0;
   const projectedExpense = movingAverage(monthsExpense, window) ?? 0;

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Transaction } from '../types';
-import { Sankey, Tooltip, ResponsiveContainer, Layer, Rectangle } from 'recharts';
+import { Sankey, Tooltip, ResponsiveContainer } from 'recharts';
 import { formatCurrency } from '../utils';
 
 interface FinancialSankeyProps {
@@ -82,47 +82,11 @@ export const FinancialSankey: React.FC<FinancialSankeyProps> = ({ transactions }
         );
     }
 
-    // Custom Node Content
-    const renderNode = (props: any) => {
-        const { x, y, width, height, index, payload, containerWidth } = props;
-        const isOut = x + width + 6 > containerWidth;
-
-        return (
-            <Layer key={`node-${index}`}>
-                <Rectangle
-                    x={x} y={y} width={width} height={height}
-                    fill={payload.name === 'Total Income' ? '#6366f1' : payload.name === 'Savings' ? '#10b981' : '#f43f5e'}
-                    fillOpacity="0.8"
-                />
-                <text
-                    x={x + width / 2}
-                    y={y + height / 2}
-                    textAnchor="middle"
-                    alignmentBaseline="middle"
-                    fontSize="12"
-                    fill="#fff"
-                    style={{ pointerEvents: 'none', fontWeight: 'bold' }}
-                >
-                    {payload.name.substring(0, 3).toUpperCase()}
-                </text>
-                <text
-                    x={x + width / 2}
-                    y={y - 6}
-                    textAnchor="middle"
-                    fill="#666"
-                    fontSize="10"
-                >
-                    {payload.name}
-                </text>
-            </Layer>
-        );
-    };
-
     return (
         <ResponsiveContainer width="100%" height="100%">
             <Sankey
                 data={data}
-                node={{ width: 15, colors: ['#8884d8'] }}
+                node={{ width: 15 }}
                 nodePadding={50}
                 margin={{ left: 20, right: 20, top: 20, bottom: 20 }}
                 link={{ stroke: '#777', strokeOpacity: 0.3 }}

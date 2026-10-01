@@ -2,11 +2,12 @@ import React from 'react';
 import { Plus, Edit2, Trash2, Calendar, IndianRupee, AlertCircle, CheckCircle, Clock, Sparkles, History, Settings } from 'lucide-react';
 import { useHomeServices } from '../hooks/useHomeServices';
 import { HomeService } from '../types';
-import { supabase } from '../services/supabaseClient';
 import { ServiceAdvisorChat } from './ServiceAdvisorChat';
 import { ServiceInsightsDashboard } from './ServiceInsightsDashboard';
 import { ServiceHistoryModal } from './ServiceHistoryModal';
 import { detectServiceTypeAndSuggest, GEMINI_MODELS, GeminiModel } from '../services/geminiService';
+import { showToast } from '../utils/toast';
+import { EmptyState } from './ui';
 
 interface ServicesPageProps {
   userId?: string;
@@ -120,7 +121,7 @@ const ServicesPage: React.FC<ServicesPageProps> = ({ userId: propUserId }) => {
 
     // Validate service type
     if (!formData.service_type.trim()) {
-      alert('Please enter a service name to detect service type');
+      showToast('Please enter a service name to detect service type', 'error');
       return;
     }
 
@@ -365,20 +366,14 @@ const ServicesPage: React.FC<ServicesPageProps> = ({ userId: propUserId }) => {
 
       {/* Services List */}
       {!selectedServiceType && services.length === 0 ? (
-        <div className="glass-panel p-12 rounded-xl text-center">
-          <Calendar className="h-16 w-16 mx-auto mb-4 text-gray-400" />
-          <h3 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-2">
-            No services tracked yet
-          </h3>
-          <p className="text-gray-600 dark:text-gray-400 mb-6">
-            Start tracking your home services to stay on top of maintenance schedules
-          </p>
-          <button
-            onClick={() => handleOpenModal()}
-            className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 text-white rounded-lg font-semibold transition"
-          >
-            Add Your First Service
-          </button>
+        <div className="glass-panel p-6 rounded-xl">
+          <EmptyState
+            icon={<Calendar className="h-16 w-16" aria-hidden="true" />}
+            title="No services tracked yet"
+            description="Start tracking your home services to stay on top of maintenance schedules"
+            actionLabel="Add Your First Service"
+            onAction={() => handleOpenModal()}
+          />
         </div>
       ) : !selectedServiceType ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

@@ -181,7 +181,7 @@ export function deriveAssets(
     });
     
     // Add suggested gold assets based on completed gold loans
-    const suggestedGold = deriveGoldAssetsFromCompletedLoans(transactions, liabilities);
+    const suggestedGold = deriveGoldAssetsFromCompletedLoans(transactions);
     suggestedGold.forEach(suggestedAsset => {
       // Only add if not already exists with the same name (user might have manually added it)
       const exists = assets.some(a => 
@@ -261,7 +261,7 @@ function derivePropertyAssetsFromLoans(transactions: Tx[], liabilities: Liabilit
  * Detect completed gold loans and suggest corresponding gold assets
  * Uses the same separation logic as deriveGoldLoans to create individual assets
  */
-function deriveGoldAssetsFromCompletedLoans(transactions: Tx[], liabilities: Liability[]): Asset[] {
+function deriveGoldAssetsFromCompletedLoans(transactions: Tx[]): Asset[] {
   const suggestedAssets: Asset[] = [];
   
   // Use the same logic as deriveGoldLoans to separate gold loan periods
@@ -795,7 +795,6 @@ export function forecastLiability(liability: Liability, transactions?: Tx[]): {
 export function buildNetWorthTimeline(transactions: Tx[], assets: Asset[], liabilities: Liability[]): NetWorthSnapshot[] {
   const months = Array.from(new Set(transactions.map(t => t.date.slice(0, 7)))).sort().reverse();
   return months.map(m => {
-    const monthTx = transactions.filter(t => t.date.startsWith(m));
     const transactionsUpToMonth = transactions.filter(t => t.date.slice(0, 7) <= m);
     const monthAssets = deriveAssets(transactionsUpToMonth, assets.filter(a => a.type !== 'cash'));
     

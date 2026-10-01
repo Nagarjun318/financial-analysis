@@ -1,61 +1,52 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# FinanceHub — Personal Financial Platform
 
-# Run and deploy AI Studio app
+React + Vite + TypeScript app for tracking transactions, investments, net worth,
+groceries, home services, and goals — with Gemini-powered AI insights.
+Backend: **Neon Postgres** (Lakebase) + **Neon Auth** (Managed Better Auth) via
+the Neon Data API.
 
-This contains everything you need to run your app locally.
+## Run locally
 
-View your app in AI Studio: https://ai.studio/apps/drive/1eDyY73c_ZDTHanJiDs6unRH4cmy3zEZg
-
-## Run Locally
-
-**Prerequisites:**  Node.js
-
+Prerequisites: Node.js 20+
 
 1. Install dependencies:
    `npm install`
-2. Create a `.env.local` file in the project root and set the following variables:
-
+2. Copy `.env.local.example` to `.env.local` (or use `.env`) and set:
    ```bash
-   VITE_SUPABASE_URL=your_supabase_project_url
-   VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+   VITE_NEON_AUTH_URL=https://<endpoint>.neonauth.<region>.aws.neon.tech/neondb/auth
+   VITE_NEON_DATA_API_URL=https://<endpoint>.apirest.<region>.aws.neon.tech/neondb/rest/v1
    VITE_GEMINI_API_KEY=your_gemini_api_key
+   VITE_INDIAN_API_KEY=your_indianapi_key
    ```
-
-3. Start the development server:
+   Tip: `neon deploy` pulls the `VITE_NEON_*` values into `.env` automatically.
+3. Start the dev server:
    `npm run dev`
 
-### Environment Variables
+### Environment variables
 
 | Variable | Purpose |
 |----------|---------|
-| `VITE_SUPABASE_URL` | Supabase project REST URL |
-| `VITE_SUPABASE_ANON_KEY` | Supabase anon public client key (do not commit secrets) |
-| `VITE_GEMINI_API_KEY` | **Required for AI Search** - Google Gemini API key for natural language transaction search |
+| `VITE_NEON_AUTH_URL` | Neon Auth base URL (public; JWT-secured) |
+| `VITE_NEON_DATA_API_URL` | Neon Data API URL (public; RLS-secured) |
+| `VITE_GEMINI_API_KEY` | Google Gemini API key for AI search/insights |
+| `VITE_INDIAN_API_KEY` | IndianAPI.in key for stock/ETF/mutual-fund prices |
 
-### Recent Improvements (Quick Wins)
-The following foundational improvements were added:
-- **AI-Powered Natural Language Search**: Search transactions using plain English queries like "show shopping expenses over ₹5000 last month" (see `AI_SEARCH_SETUP.md`)
-- Supabase credentials now loaded from env vars via `import.meta.env`.
-- Introduced an analytics module (`src/domain/analytics/summarize.ts`) consolidating summary, monthly, and category aggregation.
-- Added client-side duplicate detection before inserting staged transactions (`src/domain/transactions/dedupe.ts`).
-- Enabled strict TypeScript mode for better type safety.
+## Database
 
-### Next Suggested Steps
-- Add tests for analytics & dedupe utilities.
-- Introduce budgeting, forecasting, and AI insights modules.
-- Add linting (ESLint) and formatting (Prettier) configuration.
- - Add Vitest + Testing Library for unit/integration tests (already partially configured).
+Schema lives in `NEON_SCHEMA.sql` (11 tables, RLS per user via
+`auth.user_id()`). Apply with `psql` against `DATABASE_URL_UNPOOLED`, then
+refresh the Data API cache: `neon data-api refresh-schema`.
 
-### Testing & Linting
+## Quality gates (all enforced in CI)
 
-Run lint:
-`npm run lint`
+- `npm run lint` — ESLint (0 errors; `no-explicit-any` is a warning while
+  legacy `any` usage is cleaned up incrementally)
+- `npx tsc --noEmit` — strict typecheck, must pass
+- `npm test` — Vitest unit tests
+- `npm run build` — production build
 
-Run unit tests (Vitest):
-`npm run test`
+## Docs
 
-Format code (Prettier):
-`npm run format`
-
+Feature guides live alongside the code (`AI_SEARCH_SETUP.md`,
+`INVESTMENT_SETUP.md`, `SERVICE_HISTORY_SETUP.md`, …). Historical
+Supabase-era notes were removed during the Neon migration.

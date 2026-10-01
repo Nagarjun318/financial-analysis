@@ -1,55 +1,47 @@
 import React from 'react';
 const { useState, useEffect, useRef } = React;
-import { supabase } from '../services/supabaseClient';
 import { Plus, Trash2, ShoppingCart, Loader2, AlertTriangle, Minus, ChevronDown, ChevronRight, Check, Edit2, X, Sparkles, Bot, Settings } from 'lucide-react';
 import { suggestGroceryItemDetails, GEMINI_MODELS, GeminiModel } from '../services/geminiService';
 import { formatCurrency } from '../utils';
+import { getLocationName } from '../services/weatherService.ts';
+import { showToast } from '../utils/toast';
+import { EmptyState, Skeleton } from './ui';
 import { GroceryAdvisorChat } from './GroceryAdvisorChat';
 import WeatherSmartAssistant from './WeatherSmartAssistant';
+import ShoppingListSection from './ShoppingListSection.tsx';
+import {
+    useGroceries,
+    BASE_CATEGORIES,
+    type GroceryItem,
+    type ShoppingListItem,
+} from '../hooks/useGroceries.ts';
 
-// Types
-interface GroceryItem {
-    id: number;
-    user_id: string;
-    item_name: string;
-    category: string;
-    current_stock: number;
-    min_stock: number;
-    unit: string;
-    package_size?: string;
-    price: number;
-    last_purchased_date: string | null;
-    created_at?: string;
-    updated_at?: string;
-}
+const GroceriesPage: React.FC<{ userId?: string; onWeatherUpdate?: (condition: string, temp: number) => void }> = ({ userId, onWeatherUpdate }) => {
+    // Shared data layer (was hand-rolled fetch + local-state updates, now unified).
+    const {
+        items,
+        shoppingList,
+        isLoading: loading,
+        availableCategories,
+        addItem,
+        updateItem,
+        deleteItem,
+        updateStock: updateStockQty,
+        autoAddToShopping,
+        moveToShoppingList: moveItemToShoppingList,
+        addShoppingRows,
+        updateShoppingItem: persistShoppingItem,
+        togglePicked: togglePickedRow,
+        setPicked,
+        deleteShoppingItem: removeShoppingItem,
+        purchaseItem,
+        purchaseAllPicked,
+    } = useGroceries(userId);
 
-interface ShoppingListItem {
-    id: number;
-    user_id: string;
-    grocery_id: number | null;
-    item_name: string;
-    category: string;
-    quantity: number;
-    unit: string;
-    package_size?: string;
-    price?: number;
-    is_picked?: boolean;
-    is_auto_added: boolean;
-    created_at?: string;
-}
-
-const BASE_CATEGORIES = ['Dairy', 'Produce', 'Meat', 'Bakery', 'Pantry', 'Beverages', 'Frozen', 'Snacks', 'Household', 'Personal Care', 'Stationery', 'General'];
-
-const GroceriesPage: React.FC<{ userId: string; onWeatherUpdate?: (condition: string, temp: number) => void }> = ({ userId, onWeatherUpdate }) => {
-    const [items, setItems] = useState([] as GroceryItem[]);
-    const [shoppingList, setShoppingList] = useState([] as ShoppingListItem[]);
-    const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState('inventory' as 'inventory' | 'shopping');
+    const [activeTab, setActiveTab] = useState('inventory' as 'inventory' | 'shopping' | 'ai-chef');
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('All');
 
-    // Dynamic categories: base categories + user-created categories from existing items
-    const [availableCategories, setAvailableCategories] = useState(BASE_CATEGORIES as string[]);
     const [expandedCategories, setExpandedCategories] = useState(new Set(BASE_CATEGORIES));
     const [isSuggestingDetails, setIsSuggestingDetails] = useState(false);
     const [selectedModel, setSelectedModel] = useState<GeminiModel>(GEMINI_MODELS.FLASH_LITE);
@@ -86,26 +78,16 @@ const GroceriesPage: React.FC<{ userId: string; onWeatherUpdate?: (condition: st
                     const coords = `${latitude},${longitude}`;
                     setWeatherLocation(coords);
                     
-                    // Reverse geocode to get location name
+                    // Reverse geocode to get location name (Function proxy;
+                    // the old direct /api/geocode path only worked under the
+                    // Vite dev proxy and leaked the client key).
                     try {
-                        const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-                        const response = await fetch(`/api/geocode/json?latlng=${latitude},${longitude}&key=${apiKey}`);
-                        const data = await response.json();
-                        
-                        if (data.status === 'OK' && data.results[0]) {
-                            const addressComponents = data.results[0].address_components;
-                            const city = addressComponents.find((c: any) => c.types.includes('locality'))?.long_name;
-                            const country = addressComponents.find((c: any) => c.types.includes('country'))?.long_name;
-                            const locationName = city && country ? `${city}, ${country}` : data.results[0].formatted_address;
-                            setWeatherLocationName(locationName);
-                            console.log('[GroceriesPage] Location name set to:', locationName);
-                        }
+                        setWeatherLocationName(await getLocationName(latitude, longitude));
                     } catch (err) {
                         console.error('[GroceriesPage] Error reverse geocoding:', err);
                         setWeatherLocationName('Current Location');
                     }
                     
-                    console.log('[GroceriesPage] Coordinates set to:', coords);
                 },
                 (error) => {
                     console.warn('[GroceriesPage] Geolocation error, using default:', error);
@@ -119,10 +101,7 @@ const GroceriesPage: React.FC<{ userId: string; onWeatherUpdate?: (condition: st
         }
     }, []);
 
-    // Fetch data
-    useEffect(() => {
-        fetchData();
-    }, [userId]);
+    // Fetching is owned by useGroceries (scoped per userId, cached by query).
 
     // Click outside to close model selector
     useEffect(() => {
@@ -138,55 +117,6 @@ const GroceriesPage: React.FC<{ userId: string; onWeatherUpdate?: (condition: st
         }
     }, [showModelSelector]);
 
-    const fetchData = async () => {
-        await Promise.all([fetchGroceries(), fetchShoppingList()]);
-    };
-
-    const fetchGroceries = async () => {
-        if (!supabase) return;
-        try {
-            setLoading(true);
-            const { data, error } = await supabase
-                .from('groceries')
-                .select('*')
-                .eq('user_id', userId)
-                .order('category', { ascending: true })
-                .order('item_name', { ascending: true });
-
-            if (error) throw error;
-            setItems(data || []);
-
-            // Extract unique categories from existing items and merge with base categories
-            if (data && data.length > 0) {
-                const uniqueCategories = [...new Set(data.map((item: GroceryItem) => item.category))];
-                const allCategories = [...new Set([...BASE_CATEGORIES, ...uniqueCategories])].sort();
-                setAvailableCategories(allCategories);
-            }
-        } catch (error) {
-            console.error('Error fetching groceries:', error);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const fetchShoppingList = async () => {
-        if (!supabase) return;
-        try {
-            const { data, error } = await supabase
-                .from('shopping_list')
-                .select('*')
-                .eq('user_id', userId)
-                .order('is_picked', { ascending: true })
-                .order('category', { ascending: true })
-                .order('item_name', { ascending: true });
-
-            if (error) throw error;
-            setShoppingList(data || []);
-        } catch (error) {
-            console.error('Error fetching shopping list:', error);
-        }
-    };
-
     // AI Item Details Suggestion with debounce
     useEffect(() => {
         const suggestDetails = async () => {
@@ -195,13 +125,9 @@ const GroceriesPage: React.FC<{ userId: string; onWeatherUpdate?: (condition: st
                 try {
                     const suggested = await suggestGroceryItemDetails(newItem.item_name, availableCategories, selectedModel);
 
-                    // Update category
+                    // Update category (availableCategories derives from items,
+                    // so a suggested new category appears once saved)
                     if (suggested.category) {
-                        // If AI suggests a new category not in our list, add it
-                        if (!availableCategories.includes(suggested.category)) {
-                            setAvailableCategories((prev: string[]) => [...prev, suggested.category].sort());
-                        }
-
                         // Update all fields
                         setNewItem((prev: typeof newItem) => ({
                             ...prev,
@@ -221,7 +147,7 @@ const GroceriesPage: React.FC<{ userId: string; onWeatherUpdate?: (condition: st
 
         const timeoutId = setTimeout(suggestDetails, 800);
         return () => clearTimeout(timeoutId);
-    }, [newItem.item_name]);
+    }, [newItem.item_name, newItem.category, availableCategories, selectedModel]);
 
     const getModelDisplayName = (model: GeminiModel): string => {
         switch (model) {
@@ -236,67 +162,48 @@ const GroceriesPage: React.FC<{ userId: string; onWeatherUpdate?: (condition: st
 
     const handleAddItem = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!supabase) return;
 
         try {
             setIsSubmitting(true);
 
             const finalCategory = newItem.category === 'Custom' ? newItem.custom_category : newItem.category;
             if (!finalCategory.trim()) {
-                alert("Please enter a category name");
+                showToast('Please enter a category name', 'error');
                 setIsSubmitting(false);
                 return;
             }
 
-            const { data, error } = await supabase
-                .from('groceries')
-                .insert([
-                    {
-                        user_id: userId,
-                        item_name: newItem.item_name,
-                        category: finalCategory,
-                        current_stock: newItem.current_stock,
-                        min_stock: newItem.min_stock,
-                        unit: newItem.unit,
-                        package_size: newItem.package_size || null,
-                        price: newItem.price ? parseFloat(newItem.price) : 0,
-                        last_purchased_date: newItem.purchase_date || null
-                    }
-                ])
-                .select();
+            const addedItem = await addItem({
+                item_name: newItem.item_name,
+                category: finalCategory,
+                current_stock: newItem.current_stock,
+                min_stock: newItem.min_stock,
+                unit: newItem.unit,
+                package_size: newItem.package_size || null,
+                price: newItem.price ? parseFloat(newItem.price) : 0,
+                last_purchased_date: newItem.purchase_date || null,
+            });
 
-            if (error) throw error;
+            setNewItem({
+                item_name: '',
+                category: 'General',
+                current_stock: 0,
+                min_stock: 1,
+                unit: 'units',
+                package_size: '',
+                price: '',
+                purchase_date: new Date().toISOString().split('T')[0],
+                custom_category: ''
+            });
 
-            if (data) {
-                const addedItem = data[0];
-                setItems([...items, addedItem]);
+            // Auto-add to shopping list if stock is 0
+            if (newItem.current_stock === 0) {
+                await autoAddToShopping(addedItem, addedItem.min_stock || 1);
+            }
 
-                // Add new category to available categories if it's not already there
-                if (!availableCategories.includes(finalCategory)) {
-                    setAvailableCategories((prev: string[]) => [...prev, finalCategory].sort());
-                }
-
-                setNewItem({
-                    item_name: '',
-                    category: 'General',
-                    current_stock: 0,
-                    min_stock: 1,
-                    unit: 'units',
-                    package_size: '',
-                    price: '',
-                    purchase_date: new Date().toISOString().split('T')[0],
-                    custom_category: ''
-                });
-
-                // Auto-add to shopping list if stock is 0
-                if (newItem.current_stock === 0) {
-                    await addToShoppingListAuto(addedItem, addedItem.min_stock || 1);
-                }
-
-                // If it's a new custom category, add it to expanded categories
-                if (newItem.category === 'Custom') {
-                    setExpandedCategories((prev: Set<string>) => new Set(prev).add(finalCategory));
-                }
+            // If it's a new custom category, add it to expanded categories
+            if (newItem.category === 'Custom') {
+                setExpandedCategories((prev: Set<string>) => new Set(prev).add(finalCategory));
             }
         } catch (error) {
             console.error('Error adding item:', error);
@@ -306,25 +213,8 @@ const GroceriesPage: React.FC<{ userId: string; onWeatherUpdate?: (condition: st
     };
 
     const updateStock = async (item: GroceryItem, delta: number) => {
-        if (!supabase) return;
-
-        const newStock = Math.max(0, item.current_stock + delta);
-
         try {
-            const { error } = await supabase
-                .from('groceries')
-                .update({ current_stock: newStock })
-                .eq('id', item.id);
-
-            if (error) throw error;
-
-            // Update local state
-            setItems(items.map((i: GroceryItem) => i.id === item.id ? { ...i, current_stock: newStock } : i));
-
-            // Check if we need to add to shopping list
-            if (newStock < item.min_stock) {
-                await addToShoppingListAuto(item, item.min_stock - newStock);
-            }
+            await updateStockQty(item.id, delta);
         } catch (error) {
             console.error('Error updating stock:', error);
         }
@@ -339,29 +229,22 @@ const GroceriesPage: React.FC<{ userId: string; onWeatherUpdate?: (condition: st
     };
 
     const handleUpdateItem = async () => {
-        if (!supabase || !editingItem) return;
+        if (!editingItem) return;
 
         try {
             setIsSubmitting(true);
 
-            const { error } = await supabase
-                .from('groceries')
-                .update({
-                    item_name: editingItem.item_name,
-                    category: editingItem.category,
-                    current_stock: editingItem.current_stock,
-                    min_stock: editingItem.min_stock,
-                    unit: editingItem.unit,
-                    package_size: editingItem.package_size || null,
-                    price: editingItem.price || 0,
-                    last_purchased_date: editingItem.last_purchased_date || null
-                })
-                .eq('id', editingItem.id);
+            await updateItem(editingItem.id, {
+                item_name: editingItem.item_name,
+                category: editingItem.category,
+                current_stock: editingItem.current_stock,
+                min_stock: editingItem.min_stock,
+                unit: editingItem.unit,
+                package_size: editingItem.package_size || null,
+                price: editingItem.price || 0,
+                last_purchased_date: editingItem.last_purchased_date || null
+            });
 
-            if (error) throw error;
-
-            // Update local state
-            setItems(items.map((i: GroceryItem) => i.id === editingItem.id ? editingItem : i));
             setEditingItem(null);
         } catch (error) {
             console.error('Error updating item:', error);
@@ -370,67 +253,11 @@ const GroceriesPage: React.FC<{ userId: string; onWeatherUpdate?: (condition: st
         }
     };
 
-    const addToShoppingListAuto = async (item: GroceryItem, quantity: number) => {
-        if (!supabase) return;
-
-        // Check if already in shopping list
-        const existing = shoppingList.find((sl: ShoppingListItem) => sl.grocery_id === item.id);
-        if (existing) return;
-
-        try {
-            const { data, error } = await supabase
-                .from('shopping_list')
-                .insert([{
-                    user_id: userId,
-                    grocery_id: item.id,
-                    item_name: item.item_name,
-                    category: item.category,
-                    quantity: quantity,
-                    unit: item.unit,
-                    package_size: item.package_size || null,
-                    price: item.price || 0,
-                    is_auto_added: true
-                }])
-                .select();
-
-            if (error) throw error;
-            if (data) {
-                setShoppingList([...shoppingList, data[0]]);
-            }
-        } catch (error) {
-            console.error('Error adding to shopping list:', error);
-        }
-    };
-
     const moveToShoppingList = async (item: GroceryItem) => {
-        if (!supabase) return;
-
-        // Check if already in shopping list
-        const existing = shoppingList.find((sl: ShoppingListItem) => sl.grocery_id === item.id);
-        if (existing) {
-            alert('Item already in shopping list');
-            return;
-        }
-
         try {
-            const { data, error } = await supabase
-                .from('shopping_list')
-                .insert([{
-                    user_id: userId,
-                    grocery_id: item.id,
-                    item_name: item.item_name,
-                    category: item.category,
-                    quantity: item.min_stock,
-                    unit: item.unit,
-                    package_size: item.package_size || null,
-                    price: item.price || 0,
-                    is_auto_added: false
-                }])
-                .select();
-
-            if (error) throw error;
-            if (data) {
-                setShoppingList([...shoppingList, data[0]]);
+            const moved = await moveItemToShoppingList(item);
+            if (!moved) {
+                showToast('Item already in shopping list', 'info');
             }
         } catch (error) {
             console.error('Error moving to shopping list:', error);
@@ -438,16 +265,10 @@ const GroceriesPage: React.FC<{ userId: string; onWeatherUpdate?: (condition: st
     };
 
     const handleDeleteItem = async (id: number) => {
-        if (!window.confirm('Are you sure you want to delete this item?') || !supabase) return;
+        if (!window.confirm('Are you sure you want to delete this item?')) return;
 
         try {
-            const { error } = await supabase
-                .from('groceries')
-                .delete()
-                .eq('id', id);
-
-            if (error) throw error;
-            setItems(items.filter((item: GroceryItem) => item.id !== id));
+            await deleteItem(id);
         } catch (error) {
             console.error('Error deleting item:', error);
         }
@@ -455,183 +276,31 @@ const GroceriesPage: React.FC<{ userId: string; onWeatherUpdate?: (condition: st
 
 
 
-    const [editingShoppingItem, setEditingShoppingItem] = useState(null as ShoppingListItem | null);
-
-    const handleEditShoppingItem = (item: ShoppingListItem) => {
-        setEditingShoppingItem(item);
-    };
-
-    const handleCancelEditShoppingItem = () => {
-        setEditingShoppingItem(null);
-    };
-
-    const handleUpdateShoppingItem = async () => {
-        if (!supabase || !editingShoppingItem) return;
-
-        try {
-            setIsSubmitting(true);
-
-            const { error } = await supabase
-                .from('shopping_list')
-                .update({
-                    item_name: editingShoppingItem.item_name,
-                    category: editingShoppingItem.category,
-                    quantity: editingShoppingItem.quantity,
-                    unit: editingShoppingItem.unit,
-                    package_size: editingShoppingItem.package_size || null,
-                    price: editingShoppingItem.price || 0
-                })
-                .eq('id', editingShoppingItem.id);
-
-            if (error) throw error;
-
-            // Update local state
-            setShoppingList(shoppingList.map((i: ShoppingListItem) => i.id === editingShoppingItem.id ? editingShoppingItem : i));
-            setEditingShoppingItem(null);
-        } catch (error) {
-            console.error('Error updating shopping item:', error);
-        } finally {
-            setIsSubmitting(false);
-        }
-    };
-
     const togglePicked = async (item: ShoppingListItem) => {
-        if (!supabase) return;
         try {
-            const { error } = await supabase
-                .from('shopping_list')
-                .update({ is_picked: !item.is_picked })
-                .eq('id', item.id);
-
-            if (error) throw error;
-
-            setShoppingList(shoppingList.map((i: ShoppingListItem) =>
-                i.id === item.id ? { ...i, is_picked: !item.is_picked } : i
-            ));
+            await togglePickedRow(item);
         } catch (error) {
             console.error('Error toggling picked status:', error);
         }
     };
 
     const markAsPurchased = async (shoppingItem: ShoppingListItem) => {
-        if (!supabase) return;
-
         try {
-            // If linked to inventory, update stock
-            if (shoppingItem.grocery_id) {
-                const inventoryItem = items.find((i: GroceryItem) => i.id === shoppingItem.grocery_id);
-                if (inventoryItem) {
-                    const newStock = inventoryItem.current_stock + shoppingItem.quantity;
-                    await supabase
-                        .from('groceries')
-                        .update({
-                            current_stock: newStock,
-                            last_purchased_date: new Date().toISOString().split('T')[0]
-                        })
-                        .eq('id', inventoryItem.id);
-
-                    setItems(items.map((i: GroceryItem) =>
-                        i.id === inventoryItem.id
-                            ? { ...i, current_stock: newStock, last_purchased_date: new Date().toISOString().split('T')[0] }
-                            : i
-                    ));
-                }
-            } else {
-                // Item not in inventory - create new inventory item
-                const { data: newItem, error: insertError } = await supabase
-                    .from('groceries')
-                    .insert([{
-                        user_id: userId,
-                        item_name: shoppingItem.item_name,
-                        category: shoppingItem.category || 'General',
-                        current_stock: shoppingItem.quantity,
-                        min_stock: 1,
-                        unit: shoppingItem.unit || 'units',
-                        package_size: shoppingItem.package_size || null,
-                        price: shoppingItem.price || 0,
-                        last_purchased_date: new Date().toISOString().split('T')[0]
-                    }])
-                    .select();
-
-                if (insertError) throw insertError;
-
-                if (newItem && newItem[0]) {
-                    setItems([...items, newItem[0]]);
-                    
-                    // Add new category if needed
-                    const newCategory = shoppingItem.category || 'General';
-                    if (!availableCategories.includes(newCategory)) {
-                        setAvailableCategories((prev: string[]) => [...prev, newCategory].sort());
-                    }
-                }
-            }
-
-            // Remove from shopping list
-            const { error } = await supabase
-                .from('shopping_list')
-                .delete()
-                .eq('id', shoppingItem.id);
-
-            if (error) throw error;
-            setShoppingList(shoppingList.filter((item: ShoppingListItem) => item.id !== shoppingItem.id));
+            await purchaseItem(shoppingItem);
         } catch (error) {
             console.error('Error marking as purchased:', error);
         }
     };
 
     const handlePurchaseAllPicked = async () => {
-        if (!supabase) return;
+        const pickedCount = shoppingList.filter((item: ShoppingListItem) => item.is_picked).length;
+        if (pickedCount === 0) return;
 
-        const pickedItems = shoppingList.filter((item: ShoppingListItem) => item.is_picked);
-        if (pickedItems.length === 0) return;
-
-        if (!window.confirm(`Mark ${pickedItems.length} items as purchased?`)) return;
+        if (!window.confirm(`Mark ${pickedCount} items as purchased?`)) return;
 
         try {
             setIsSubmitting(true);
-
-            // Process each item
-            for (const item of pickedItems) {
-                // 1. Update inventory if linked, or create new inventory item
-                if (item.grocery_id) {
-                    const inventoryItem = items.find((i: GroceryItem) => i.id === item.grocery_id);
-                    if (inventoryItem) {
-                        const newStock = inventoryItem.current_stock + item.quantity;
-                        await supabase
-                            .from('groceries')
-                            .update({
-                                current_stock: newStock,
-                                last_purchased_date: new Date().toISOString().split('T')[0]
-                            })
-                            .eq('id', inventoryItem.id);
-                    }
-                } else {
-                    // Item not in inventory - create new inventory item
-                    await supabase
-                        .from('groceries')
-                        .insert([{
-                            user_id: userId,
-                            item_name: item.item_name,
-                            category: item.category || 'General',
-                            current_stock: item.quantity,
-                            min_stock: 1,
-                            unit: item.unit || 'units',
-                            package_size: item.package_size || null,
-                            price: item.price || 0,
-                            last_purchased_date: new Date().toISOString().split('T')[0]
-                        }]);
-                }
-
-                // 2. Remove from shopping list
-                await supabase
-                    .from('shopping_list')
-                    .delete()
-                    .eq('id', item.id);
-            }
-
-            // Refresh data
-            await fetchData();
-
+            await purchaseAllPicked();
         } catch (error) {
             console.error('Error purchasing all picked:', error);
         } finally {
@@ -642,83 +311,59 @@ const GroceriesPage: React.FC<{ userId: string; onWeatherUpdate?: (condition: st
 
 
     const deleteShoppingItem = async (id: number) => {
-        if (!supabase) return;
-
         try {
-            const { error } = await supabase
-                .from('shopping_list')
-                .delete()
-                .eq('id', id);
-
-            if (error) throw error;
-            setShoppingList(shoppingList.filter((item: ShoppingListItem) => item.id !== id));
+            await removeShoppingItem(id);
         } catch (error) {
             console.error('Error deleting shopping item:', error);
         }
     };
 
-    const addSuggestedItems = async (suggestedItems: any[]) => {
-        if (!supabase) return;
+    const handleUpdateShoppingItem = async (id: number, updates: Partial<ShoppingListItem>) => {
+        await persistShoppingItem(id, updates);
+    };
 
+    const addSuggestedItems = async (suggestedItems: any[]) => {
         try {
-            const newItems = suggestedItems.map(item => ({
-                user_id: userId,
+            const added = await addShoppingRows(suggestedItems.map(item => ({
                 grocery_id: null,
                 item_name: item.item_name,
                 category: item.category,
                 quantity: item.quantity,
                 unit: item.unit,
                 is_auto_added: false
-            }));
+            })));
 
-            const { data, error } = await supabase
-                .from('shopping_list')
-                .insert(newItems)
-                .select();
-
-            if (error) throw error;
-
-            if (data) {
-                setShoppingList([...shoppingList, ...data]);
-                alert(`Added ${data.length} items to your shopping list!`);
+            if (added.length > 0) {
+                showToast(`Added ${added.length} items to your shopping list!`, 'success');
                 setActiveTab('shopping');
             }
         } catch (error) {
             console.error('Error adding suggested items:', error);
-            alert('Failed to add items to shopping list.');
+            showToast('Failed to add items to shopping list.', 'error');
         }
     };
 
     // Handler for adding items from weather suggestions
     const handleAddWeatherItems = async (itemNames: string[]) => {
-        if (!supabase || !itemNames || itemNames.length === 0) return;
+        if (!itemNames || itemNames.length === 0) return;
 
         try {
-            const newItems = itemNames.map(itemName => ({
-                user_id: userId,
+            const added = await addShoppingRows(itemNames.map(itemName => ({
                 grocery_id: null,
                 item_name: itemName,
                 category: 'General',
                 quantity: 1,
                 unit: 'units',
                 is_auto_added: false
-            }));
+            })));
 
-            const { data, error } = await supabase
-                .from('shopping_list')
-                .insert(newItems)
-                .select();
-
-            if (error) throw error;
-
-            if (data) {
-                setShoppingList([...shoppingList, ...data]);
-                alert(`Added ${data.length} weather-suggested items to your shopping list!`);
+            if (added.length > 0) {
+                showToast(`Added ${added.length} weather-suggested items to your shopping list!`, 'success');
                 setActiveTab('shopping');
             }
         } catch (error) {
             console.error('Error adding weather items:', error);
-            alert('Failed to add items. Please try again.');
+            showToast('Failed to add items. Please try again.', 'error');
         }
     };
 
@@ -733,23 +378,12 @@ const GroceriesPage: React.FC<{ userId: string; onWeatherUpdate?: (condition: st
     };
 
     const pickAllInCategory = async (categoryItems: ShoppingListItem[]) => {
-        if (!supabase) return;
-
         const allPicked = categoryItems.every(i => i.is_picked);
         const targetState = !allPicked;
         const idsToUpdate = categoryItems.map(i => i.id);
 
         try {
-            const { error } = await supabase
-                .from('shopping_list')
-                .update({ is_picked: targetState })
-                .in('id', idsToUpdate);
-
-            if (error) throw error;
-
-            setShoppingList(shoppingList.map(i =>
-                idsToUpdate.includes(i.id) ? { ...i, is_picked: targetState } : i
-            ));
+            await setPicked(idsToUpdate, targetState);
         } catch (error) {
             console.error('Error updating category items:', error);
         }
@@ -768,17 +402,6 @@ const GroceriesPage: React.FC<{ userId: string; onWeatherUpdate?: (condition: st
         acc[item.category].push(item);
         return acc;
     }, {});
-
-    const shoppingByCategory = [...shoppingList]
-        .sort((a, b) => {
-            if (a.is_picked !== b.is_picked) return a.is_picked ? 1 : -1;
-            return a.item_name.localeCompare(b.item_name);
-        })
-        .reduce((acc: Record<string, ShoppingListItem[]>, item: ShoppingListItem) => {
-            if (!acc[item.category]) acc[item.category] = [];
-            acc[item.category].push(item);
-            return acc;
-        }, {});
 
     const lowStockCount = items.filter((i: GroceryItem) => i.current_stock < i.min_stock).length;
 
@@ -929,7 +552,8 @@ const GroceriesPage: React.FC<{ userId: string; onWeatherUpdate?: (condition: st
                                         onChange={e => setNewItem({ ...newItem, category: e.target.value })}
                                         className="w-full px-4 py-2.5 rounded-xl border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary transition-all appearance-none"
                                     >
-                                        {availableCategories.map((cat: string) => (
+                                        {/* Include the pending AI-suggested category so the select never blanks */}
+                                        {[...new Set([...availableCategories, newItem.category])].map((cat: string) => (
                                             <option key={cat} value={cat}>{cat}</option>
                                         ))}
                                         <option value="Custom">Custom...</option>
@@ -1054,17 +678,17 @@ const GroceriesPage: React.FC<{ userId: string; onWeatherUpdate?: (condition: st
                     {/* Inventory List */}
                     <div className="space-y-4">
                         {loading ? (
-                            <div className="p-12 text-center text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
-                                <Loader2 className="h-10 w-10 animate-spin mx-auto mb-4 text-brand-primary" />
-                                <p className="text-lg font-medium">Loading your pantry...</p>
+                            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-6">
+                                <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-4">Loading your pantry...</p>
+                                <Skeleton variant="text" lines={5} />
                             </div>
                         ) : Object.keys(itemsByCategory).length === 0 ? (
-                            <div className="p-12 text-center text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
-                                <div className="bg-gray-100 dark:bg-gray-700/50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                                    <ShoppingCart className="h-8 w-8 text-gray-400" />
-                                </div>
-                                <p className="text-lg font-medium text-gray-900 dark:text-white">No items found</p>
-                                <p className="mt-1">Add some items to get started!</p>
+                            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+                                <EmptyState
+                                    icon={<ShoppingCart className="h-8 w-8" aria-hidden="true" />}
+                                    title="No items found"
+                                    description="Add some items to get started!"
+                                />
                             </div>
                         ) : (
                             <div className="grid gap-6">
@@ -1338,279 +962,18 @@ const GroceriesPage: React.FC<{ userId: string; onWeatherUpdate?: (condition: st
                     </div>
                 </div>
             )}
-            {/* Edit Shopping Item Modal */}
-            {editingShoppingItem && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fadeIn">
-                    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-                        <div className="sticky top-0 bg-gradient-to-r from-brand-primary to-brand-secondary p-6 rounded-t-2xl">
-                            <div className="flex items-center justify-between">
-                                <h3 className="text-2xl font-bold text-white flex items-center gap-2">
-                                    <Edit2 className="h-6 w-6" />
-                                    Edit Shopping Item
-                                </h3>
-                                <button
-                                    onClick={handleCancelEditShoppingItem}
-                                    className="p-2 hover:bg-white/20 rounded-lg transition-colors"
-                                >
-                                    <X className="h-6 w-6 text-white" />
-                                </button>
-                            </div>
-                        </div>
-
-                        <div className="p-6 space-y-4">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="md:col-span-2">
-                                    <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ml-1">Item Name</label>
-                                    <input
-                                        type="text"
-                                        value={editingShoppingItem.item_name}
-                                        onChange={e => setEditingShoppingItem({ ...editingShoppingItem, item_name: e.target.value })}
-                                        className="w-full px-4 py-2.5 rounded-xl border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary transition-all"
-                                    />
-                                </div>
-
-                                <div className="md:col-span-2">
-                                    <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ml-1">Category</label>
-                                    <select
-                                        value={editingShoppingItem.category}
-                                        onChange={e => setEditingShoppingItem({ ...editingShoppingItem, category: e.target.value })}
-                                        className="w-full px-4 py-2.5 rounded-xl border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary transition-all"
-                                    >
-                                        {availableCategories.map((cat: string) => (
-                                            <option key={cat} value={cat}>{cat}</option>
-                                        ))}
-                                    </select>
-                                </div>
-
-                                <div>
-                                    <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ml-1">Quantity</label>
-                                    <input
-                                        type="number"
-                                        value={editingShoppingItem.quantity}
-                                        onChange={e => setEditingShoppingItem({ ...editingShoppingItem, quantity: parseInt(e.target.value) || 1 })}
-                                        className="w-full px-4 py-2.5 rounded-xl border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary transition-all"
-                                        min="1"
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ml-1">Unit</label>
-                                    <input
-                                        type="text"
-                                        value={editingShoppingItem.unit}
-                                        onChange={e => setEditingShoppingItem({ ...editingShoppingItem, unit: e.target.value })}
-                                        className="w-full px-4 py-2.5 rounded-xl border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary transition-all"
-                                        placeholder="pcs"
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ml-1">Package Size</label>
-                                    <input
-                                        type="text"
-                                        value={editingShoppingItem.package_size || ''}
-                                        onChange={e => setEditingShoppingItem({ ...editingShoppingItem, package_size: e.target.value })}
-                                        className="w-full px-4 py-2.5 rounded-xl border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary transition-all"
-                                        placeholder="e.g., 500ml, 1kg"
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ml-1">Price (₹)</label>
-                                    <input
-                                        type="number"
-                                        step="0.01"
-                                        value={editingShoppingItem.price || ''}
-                                        onChange={e => setEditingShoppingItem({ ...editingShoppingItem, price: parseFloat(e.target.value) || 0 })}
-                                        className="w-full px-4 py-2.5 rounded-xl border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary transition-all"
-                                        placeholder="0.00"
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="flex gap-3 pt-4">
-                                <button
-                                    onClick={handleCancelEditShoppingItem}
-                                    className="flex-1 px-6 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl font-semibold hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={handleUpdateShoppingItem}
-                                    disabled={isSubmitting}
-                                    className="flex-1 px-6 py-3 bg-gradient-to-r from-brand-primary to-brand-secondary text-white rounded-xl font-semibold hover:shadow-lg hover:scale-[1.02] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                                >
-                                    {isSubmitting ? (
-                                        <>
-                                            <Loader2 className="h-5 w-5 animate-spin" />
-                                            Updating...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Check className="h-5 w-5" />
-                                            Update Item
-                                        </>
-                                    )}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {activeTab === 'shopping' && (
-                <div className="space-y-6 animate-slideUp">
-                    {/* Bulk Purchase Button */}
-                    {shoppingList.some((item: ShoppingListItem) => item.is_picked) && (
-                        <div className="sticky top-0 z-30 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md py-2 -mx-4 px-4 md:mx-0 md:px-0 md:bg-transparent md:backdrop-blur-none md:static mb-4 transition-all">
-                            <button
-                                onClick={handlePurchaseAllPicked}
-                                disabled={isSubmitting}
-                                className="w-full md:w-auto flex items-center justify-center gap-3 px-6 py-3 bg-gradient-to-r from-green-600 to-green-500 text-white rounded-xl shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all font-bold text-base disabled:opacity-70 disabled:cursor-not-allowed"
-                            >
-                                {isSubmitting ? (
-                                    <Loader2 className="h-5 w-5 animate-spin" />
-                                ) : (
-                                    <Check className="h-5 w-5" />
-                                )}
-                                Purchase {shoppingList.filter((i: ShoppingListItem) => i.is_picked).length} Picked Items
-                            </button>
-                        </div>
-                    )}
-
-                    {/* Shopping List */}
-                    <div className="space-y-4">
-                        {shoppingList.length === 0 ? (
-                            <div className="p-12 text-center text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
-                                <div className="bg-green-100 dark:bg-green-900/30 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                                    <Check className="h-8 w-8 text-green-600 dark:text-green-400" />
-                                </div>
-                                <p className="text-lg font-medium text-gray-900 dark:text-white">All caught up!</p>
-                                <p className="mt-1">Your shopping list is empty.</p>
-                            </div>
-                        ) : (
-                            <div className="grid gap-6">
-                                {(Object.entries(shoppingByCategory) as [string, ShoppingListItem[]][])
-                                    .sort(([catA, itemsA], [catB, itemsB]) => {
-                                        const allPickedA = itemsA.every(i => i.is_picked);
-                                        const allPickedB = itemsB.every(i => i.is_picked);
-                                        if (allPickedA && !allPickedB) return 1;
-                                        if (!allPickedA && allPickedB) return -1;
-                                        return catA.localeCompare(catB);
-                                    })
-                                    .map(([category, categoryItems]) => (
-                                        <div key={category} className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-                                            <div className="px-6 py-3 bg-gray-50/80 dark:bg-gray-800/80 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
-                                                <div className="flex items-center gap-2">
-                                                    <span className="font-bold text-gray-800 dark:text-white">{category}</span>
-                                                    <span className="px-2 py-0.5 text-xs font-medium bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-full">
-                                                        {categoryItems.length}
-                                                    </span>
-                                                </div>
-                                                <button
-                                                    onClick={() => pickAllInCategory(categoryItems)}
-                                                    className="text-xs font-medium text-brand-primary hover:text-brand-secondary transition-colors"
-                                                >
-                                                    {categoryItems.every(i => i.is_picked) ? 'Unpick All' : 'Pick All'}
-                                                </button>
-                                            </div>
-                                            <div className="divide-y divide-gray-100 dark:divide-gray-700/50">
-                                                {categoryItems.map((item: ShoppingListItem) => {
-                                                    const inventoryItem = items.find((i: GroceryItem) => i.id === item.grocery_id);
-                                                    return (
-                                                        <div
-                                                            key={item.id}
-                                                            className="px-6 py-4 group transition-all hover:bg-gray-50/80 dark:hover:bg-gray-700/30"
-                                                        >
-                                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                                                                <div className="flex-1">
-                                                                    <div className="flex items-center gap-3">
-                                                                        <div className={`h-5 w-5 rounded border flex items-center justify-center cursor-pointer transition-colors ${item.is_picked ? 'bg-gray-400 border-gray-400' : 'border-gray-300 dark:border-gray-600 hover:border-brand-primary'
-                                                                            }`}
-                                                                            onClick={() => togglePicked(item)}
-                                                                        >
-                                                                            {item.is_picked && <Check className="h-3 w-3 text-white" />}
-                                                                        </div>
-                                                                        <h4 className={`text-base font-medium decoration-gray-400 ${item.is_picked ? 'text-gray-400 line-through' : 'text-gray-900 dark:text-white'}`}>
-                                                                            {item.item_name}
-                                                                            {item.package_size && (
-                                                                                <span className="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">
-                                                                                    ({item.package_size})
-                                                                                </span>
-                                                                            )}
-                                                                        </h4>
-                                                                        {item.is_auto_added && (
-                                                                            <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 rounded-full">
-                                                                                Auto
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
-                                                                    <div className="ml-8 mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500 dark:text-gray-400">
-                                                                        <span className="font-medium text-gray-700 dark:text-gray-300">
-                                                                            Qty: {item.quantity} {item.unit}
-                                                                        </span>
-
-                                                                        {/* Price Display */}
-                                                                        {(item.price || (inventoryItem && inventoryItem.price > 0)) && (
-                                                                            <>
-                                                                                <span className="hidden sm:inline text-gray-300 dark:text-gray-600">|</span>
-                                                                                <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-4 sm:items-center">
-                                                                                    <span>
-                                                                                        {formatCurrency(item.price || (inventoryItem ? inventoryItem.price : 0))} each
-                                                                                    </span>
-                                                                                    <span className="text-xs font-semibold text-brand-primary dark:text-brand-light">
-                                                                                        Total: {formatCurrency((item.price || (inventoryItem ? inventoryItem.price : 0)) * item.quantity)}
-                                                                                    </span>
-                                                                                </div>
-                                                                            </>
-                                                                        )}
-
-                                                                        {inventoryItem && inventoryItem.last_purchased_date && (
-                                                                            <>
-                                                                                <span className="hidden sm:inline text-gray-300 dark:text-gray-600">|</span>
-                                                                                <span className="text-xs text-gray-400">
-                                                                                    Last: {new Date(inventoryItem.last_purchased_date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', timeZone: 'Asia/Kolkata' })}
-                                                                                </span>
-                                                                            </>
-                                                                        )}
-                                                                    </div>
-                                                                </div>
-                                                                <div className="flex items-center gap-3 ml-8 sm:ml-0">
-                                                                    <button
-                                                                        onClick={() => markAsPurchased(item)}
-                                                                        className="flex items-center gap-2 px-4 py-2 bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 rounded-xl hover:bg-green-100 dark:hover:bg-green-900/40 transition-all font-medium text-sm"
-                                                                    >
-                                                                        <Check className="h-4 w-4" />
-                                                                        <span className="hidden sm:inline">Purchased</span>
-                                                                    </button>
-                                                                    <button
-                                                                        onClick={() => handleEditShoppingItem(item)}
-                                                                        className="p-2 text-gray-500 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
-                                                                        title="Edit item"
-                                                                    >
-                                                                        <Edit2 className="h-5 w-5" />
-                                                                    </button>
-                                                                    <button
-                                                                        onClick={() => deleteShoppingItem(item.id)}
-                                                                        className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                                                                        title="Remove from list"
-                                                                    >
-                                                                        <Trash2 className="h-5 w-5" />
-                                                                    </button>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-                                    ))}
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
-
+            <ShoppingListSection
+                shoppingList={shoppingList}
+                items={items}
+                availableCategories={availableCategories}
+                isSubmitting={isSubmitting}
+                onTogglePicked={togglePicked}
+                onPickAllInCategory={pickAllInCategory}
+                onPurchase={markAsPurchased}
+                onPurchaseAllPicked={handlePurchaseAllPicked}
+                onUpdateItem={handleUpdateShoppingItem}
+                onDeleteItem={deleteShoppingItem}
+            />
             {/* AI Chef Tab */}
             {activeTab === 'ai-chef' && (
                 <div className="glass-panel rounded-2xl border border-gray-200 dark:border-gray-700/50 shadow-lg bg-white/50 dark:bg-gray-800/50 backdrop-blur-xl overflow-hidden flex flex-col h-[600px] animate-slideUp">

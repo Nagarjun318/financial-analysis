@@ -6,17 +6,18 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer
 } from 'recharts';
 import { Transaction } from '../types.ts';
 import { formatCurrency } from '../utils.ts';
+import { SEMANTIC, useChartTheme } from './charts/chartTheme.ts';
 
 interface TrendsChartProps {
   transactions: Transaction[];
 }
 
 const TrendsChart: React.FC<TrendsChartProps> = ({ transactions }) => {
+  const theme = useChartTheme();
   const chartData = React.useMemo(() => {
     // Assume incoming transactions are already filtered by year/month/category in parent if needed.
     // We aggregate all distinct YYYY-MM present in the provided list.
@@ -43,27 +44,23 @@ const TrendsChart: React.FC<TrendsChartProps> = ({ transactions }) => {
       {chartData.length > 1 ? (
         <ResponsiveContainer width="100%" height={350}>
           <LineChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} stroke="#9ca3af" />
-            <XAxis dataKey="month" stroke="#9ca3af" tick={{ fill: '#9ca3af', fontSize: 12 }} />
-            <YAxis 
+            <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} stroke={theme.grid} />
+            <XAxis dataKey="month" stroke={theme.tick} tick={{ fill: theme.tick, fontSize: 12 }} />
+            <YAxis
               tickFormatter={(value) => `₹${Number(value / 1000).toFixed(0)}k`}
-              stroke="#9ca3af"
-              tick={{ fill: '#9ca3af', fontSize: 12 }}
+              stroke={theme.tick}
+              tick={{ fill: theme.tick, fontSize: 12 }}
               width={50}
             />
             <Tooltip
               formatter={(value: number, name: string) => [formatCurrency(value), name.charAt(0).toUpperCase() + name.slice(1)]}
-              contentStyle={{
-                backgroundColor: 'rgba(31, 41, 55, 0.8)',
-                borderColor: '#4b5563',
-                borderRadius: '0.5rem',
-              }}
-              labelStyle={{ color: '#f9fafb' }}
-              itemStyle={{ textTransform: 'capitalize' }}
+              contentStyle={theme.tooltip.contentStyle}
+              labelStyle={theme.tooltip.labelStyle}
+              itemStyle={{ ...theme.tooltip.itemStyle, textTransform: 'capitalize' }}
             />
             {/* Legend removed due to TypeScript JSX typing issue; can be re-added once recharts types are adjusted */}
-            <Line type="monotone" dataKey="income" stroke="#06b6d4" strokeWidth={3} activeDot={{ r: 9, fill: '#06b6d4', stroke: '#ffffff', strokeWidth: 2 }} dot={{ r: 5, fill: '#06b6d4' }} />
-            <Line type="monotone" dataKey="expense" stroke="#f59e0b" strokeWidth={3} activeDot={{ r: 9, fill: '#f59e0b', stroke: '#ffffff', strokeWidth: 2 }} dot={{ r: 5, fill: '#f59e0b' }} />
+            <Line type="monotone" dataKey="income" stroke={SEMANTIC.income} strokeWidth={3} activeDot={{ r: 9, fill: SEMANTIC.income, stroke: '#ffffff', strokeWidth: 2 }} dot={{ r: 5, fill: SEMANTIC.income }} />
+            <Line type="monotone" dataKey="expense" stroke={SEMANTIC.expense} strokeWidth={3} activeDot={{ r: 9, fill: SEMANTIC.expense, stroke: '#ffffff', strokeWidth: 2 }} dot={{ r: 5, fill: SEMANTIC.expense }} />
           </LineChart>
         </ResponsiveContainer>
       ) : (

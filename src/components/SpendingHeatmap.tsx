@@ -38,7 +38,7 @@ export const SpendingHeatmap: React.FC<SpendingHeatmapProps> = ({ transactions }
         const dayOfWeek = startDate.getDay();
         startDate.setDate(startDate.getDate() - dayOfWeek);
 
-        let currentDate = new Date(startDate);
+        const currentDate = new Date(startDate);
 
         // Generate 53 weeks to cover the full year view
         for (let w = 0; w < 53; w++) {

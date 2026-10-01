@@ -1,10 +1,12 @@
 import React from 'react';
-import { Menu, X, Home, User, Briefcase, TrendingUp, PieChart, LogOut, ShoppingCart, Wallet, Target, ChevronLeft, ChevronRight, BarChart3, Cloud, CloudRain, Sun, CloudSnow, CloudFog, CloudDrizzle, RefreshCw } from 'lucide-react';
+import { NavLink, useLocation } from 'react-router-dom';
+import { Menu, Home, User, Briefcase, TrendingUp, PieChart, LogOut, ShoppingCart, Wallet, Target, ChevronLeft, BarChart3, Cloud, CloudRain, Sun, CloudSnow, CloudFog, CloudDrizzle, RefreshCw, Search } from 'lucide-react';
 import ThemeSwitcher from './ThemeSwitcher';
+import { pathForSection, sectionFromPath, SectionId } from '../app/sections';
 
 interface SidebarProps {
-    currentSection: string;
-    onSectionChange: (section: string) => void;
+    currentSection?: string;
+    onSectionChange?: (section: string) => void;
     userEmail?: string;
     onSignOut?: () => void;
     isOpen: boolean;
@@ -12,9 +14,14 @@ interface SidebarProps {
     weatherCondition?: string;
     weatherTemperature?: number;
     onWeatherRefresh?: () => void;
+    onOpenPalette?: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ currentSection, onSectionChange, userEmail, onSignOut, isOpen, onToggle, weatherCondition, weatherTemperature, onWeatherRefresh }) => {
+const Sidebar: React.FC<SidebarProps> = ({ currentSection: currentSectionProp, onSectionChange, userEmail, onSignOut, isOpen, onToggle, weatherCondition, weatherTemperature, onWeatherRefresh, onOpenPalette }) => {
+    const location = useLocation();
+    // URL is the source of truth; prop is a fallback for tests / callers
+    // that render Sidebar outside a route update.
+    const currentSection = currentSectionProp ?? sectionFromPath(location.pathname);
     // Get weather icon based on condition
     const getWeatherIcon = () => {
         if (!weatherCondition) return Cloud;
@@ -55,7 +62,6 @@ const Sidebar: React.FC<SidebarProps> = ({ currentSection, onSectionChange, user
                 { id: 'investment', label: 'Investment', icon: TrendingUp },
                 { id: 'networth', label: 'Net Worth', icon: Wallet },
                 { id: 'goals', label: 'Goals', icon: Target },
-                { id: 'documents', label: 'Documents', icon: PieChart },
             ]
         },
         ...(!userEmail ? [{
@@ -100,12 +106,24 @@ const Sidebar: React.FC<SidebarProps> = ({ currentSection, onSectionChange, user
                     ) : (
                         <span className="text-xl font-bold gradient-text">M</span>
                     )}
-                    <button
-                        onClick={onToggle}
-                        className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 transition-colors"
-                    >
-                        {isOpen ? <ChevronLeft className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-                    </button>
+                    <div className="flex items-center gap-1">
+                        {onOpenPalette && (
+                            <button
+                                onClick={onOpenPalette}
+                                className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 transition-colors"
+                                title="Commands (Ctrl+K)"
+                                aria-label="Open command palette"
+                            >
+                                <Search className="w-5 h-5" />
+                            </button>
+                        )}
+                        <button
+                            onClick={onToggle}
+                            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 transition-colors"
+                        >
+                            {isOpen ? <ChevronLeft className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+                        </button>
+                    </div>
                 </div>
 
                 {/* Navigation */}
@@ -121,19 +139,46 @@ const Sidebar: React.FC<SidebarProps> = ({ currentSection, onSectionChange, user
                                 {group.items.map((item) => {
                                     const Icon = item.icon;
                                     const isActive = currentSection === item.id;
+                                    // 'auth' is a modal, not a route — keep it a button.
+                                    if (item.id === 'auth') {
+                                        return (
+                                            <button
+                                                key={item.id}
+                                                onClick={() => onSectionChange?.(item.id)}
+                                                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white"
+                                                title={!isOpen ? item.label : undefined}
+                                            >
+                                                <Icon className="w-5 h-5 flex-shrink-0 text-gray-500 dark:text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-300" />
+                                                {isOpen && <span>{item.label}</span>}
+                                            </button>
+                                        );
+                                    }
+                                    const to = pathForSection(item.id as SectionId);
                                     return (
-                                        <button
+                                        <NavLink
                                             key={item.id}
-                                            onClick={() => onSectionChange(item.id)}
-                                            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group ${isActive
-                                                ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400'
-                                                : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
-                                                }`}
+                                            to={to}
+                                            end={to === '/'}
+                                            onClick={() => onSectionChange?.(item.id)}
+                                            className={({ isActive: routerActive }) => {
+                                                const active = routerActive || isActive;
+                                                return `w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group ${active
+                                                    ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400'
+                                                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
+                                                    }`;
+                                            }}
                                             title={!isOpen ? item.label : undefined}
                                         >
-                                            <Icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-300'}`} />
-                                            {isOpen && <span>{item.label}</span>}
-                                        </button>
+                                            {({ isActive: routerActive }) => {
+                                                const active = routerActive || isActive;
+                                                return (
+                                                    <>
+                                                        <Icon className={`w-5 h-5 flex-shrink-0 ${active ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-300'}`} />
+                                                        {isOpen && <span>{item.label}</span>}
+                                                    </>
+                                                );
+                                            }}
+                                        </NavLink>
                                     );
                                 })}
                             </div>

@@ -1,7 +1,7 @@
 import React from 'react';
-import { summarizeNetWorth, buildNetWorthTimeline, forecastLiability, deriveAssets, deriveLiabilities, Liability, Asset, getCurrentPrincipal, getPrincipal } from '../domain/networth/calculateNetWorth';
+import { summarizeNetWorth, buildNetWorthTimeline, forecastLiability, deriveAssets, deriveLiabilities, Liability, Asset, getCurrentPrincipal } from '../domain/networth/calculateNetWorth';
 import { Transaction } from '../types';
-import { Wallet, TrendingUp, TrendingDown, Calendar, Percent, DollarSign, Plus, Trash2 } from 'lucide-react';
+import { Wallet, TrendingUp, TrendingDown, Calendar, Percent, DollarSign, Plus } from 'lucide-react';
 import { useAssets } from '../hooks/useAssets';
 import { useLiabilities } from '../hooks/useLiabilities';
 import { useInvestments } from '../hooks/useInvestments';
@@ -15,7 +15,7 @@ import { AIDebtOptimizer } from './AIDebtOptimizer';
 
 interface Props {
   transactions: Transaction[];
-  userId: string;
+  userId?: string;
 }
 
 export const NetWorthPage: React.FC<Props> = ({
@@ -656,7 +656,6 @@ export const NetWorthPage: React.FC<Props> = ({
         initialData={modalData}
         onSave={handleModalSave}
         onDelete={handleModalDelete}
-        existingAssets={assets}
       />
     </div >
   );

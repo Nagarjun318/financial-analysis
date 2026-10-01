@@ -4,6 +4,7 @@ import { FixedSizeList as List, ListChildComponentProps } from 'react-window';
 import { Transaction } from '../types.ts';
 import { exportTransactionsCsv } from '../utils/exportCsv.ts';
 import { formatCurrency, formatDisplayDate } from '../utils.ts';
+import { EmptyState } from './ui';
 
 interface VirtualizedTransactionListProps {
   transactions: Transaction[];
@@ -74,9 +75,14 @@ export const VirtualizedTransactionList: React.FC<VirtualizedTransactionListProp
         <div className="text-right">Amount</div>
         <div className="text-right">Actions</div>
       </div>
-      {React.createElement(List, { height: listHeight, itemCount: transactions.length, itemSize: rowHeight, width: '100%' }, Row)}
+      <List height={listHeight} itemCount={transactions.length} itemSize={rowHeight} width="100%">
+        {Row}
+      </List>
       {transactions.length === 0 && (
-        <div className="p-6 text-center text-light-text-secondary dark:text-dark-text-secondary">No transactions loaded yet.</div>
+        <EmptyState
+          title="No transactions yet"
+          description="Upload a bank statement to get started."
+        />
       )}
     </div>
   );

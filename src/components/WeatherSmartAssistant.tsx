@@ -1,8 +1,9 @@
 import React from 'react';
 const { useState, useEffect } = React;
-import { CloudRain, Cloud, Sun, Wind, Droplets, RefreshCw, X, ChevronDown, ChevronUp, Loader2, MapPin, Navigation } from 'lucide-react';
+import { CloudRain, Cloud, Sun, Droplets, RefreshCw, X, ChevronDown, ChevronUp, Loader2, MapPin, Navigation } from 'lucide-react';
 import { getWeatherData, generateWeatherGrocerySuggestions, WeatherData, WeatherGrocerySuggestion } from '../services/weatherService';
 import { GEMINI_MODELS, GeminiModel } from '../services/geminiService';
+import { showToast } from '../utils/toast';
 
 interface WeatherSmartAssistantProps {
   location?: string; // Coordinates
@@ -45,7 +46,6 @@ const WeatherSmartAssistant: React.FC<WeatherSmartAssistantProps> = ({
     setError(null);
     
     try {
-      console.log('[WeatherSmartAssistant] Fetching weather for location:', location);
       
       // Fetch weather data
       const weather = await getWeatherData(location);
@@ -54,15 +54,11 @@ const WeatherSmartAssistant: React.FC<WeatherSmartAssistantProps> = ({
         throw new Error('Could not fetch weather data. Please check your API key and try again.');
       }
       
-      console.log('[WeatherSmartAssistant] Weather data received:', weather);
       setWeatherData(weather);
       
       // Update parent component with weather data
       if (onWeatherUpdate && weather.temperature !== undefined) {
-        console.log('[WeatherSmartAssistant] Updating weather:', weather.condition, weather.temperature);
         onWeatherUpdate(weather.condition, weather.temperature);
-      } else {
-        console.log('[WeatherSmartAssistant] No weather update callback or missing temp:', { onWeatherUpdate: !!onWeatherUpdate, temp: weather.temperature });
       }
       
       // Generate suggestions based on weather
@@ -112,7 +108,7 @@ const WeatherSmartAssistant: React.FC<WeatherSmartAssistantProps> = ({
 
   const handleUseCurrentLocation = async () => {
     if (!navigator.geolocation) {
-      alert('Geolocation is not supported by your browser');
+      showToast('Geolocation is not supported by your browser', 'error');
       return;
     }
 

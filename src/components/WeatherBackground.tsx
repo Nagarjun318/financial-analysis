@@ -2,7 +2,7 @@ import React from 'react';
 const { useEffect, useState } = React;
 
 interface WeatherBackgroundProps {
-  condition: string;
+  condition?: string;
   temperature?: number;
 }
 
@@ -94,7 +94,6 @@ const WeatherBackground: React.FC<WeatherBackgroundProps> = ({ condition, temper
 
   // Debug log
   useEffect(() => {
-    console.log('[WeatherBackground] Rendering with:', { condition, temperature, theme });
   }, [condition, temperature]);
 
   return (

@@ -26,18 +26,56 @@ jobs:
           else
             npm install --no-audit --no-fund
           fi
-      - name: Build (inject Supabase env from GitHub Secrets)
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Unit tests
+        run: npm test
+      - name: Build (inject Neon env from GitHub Secrets)
         env:
-          VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          VITE_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          VITE_INDIAN_API_KEY: ${{ secrets.INDIAN_API_KEY }}
+          VITE_NEON_AUTH_URL: ${{ secrets.NEON_AUTH_URL }}
+          VITE_NEON_DATA_API_URL: ${{ secrets.NEON_DATA_API_URL }}
+          # Phase 4: provider keys stay server-side in the `api` Function.
+          # The bundle only needs the Function URL (set after the first
+          # `neon deploy`; see FUNCTIONS_SETUP.md). VITE_GEMINI_API_KEY /
+          # VITE_INDIAN_API_KEY are intentionally NOT injected anymore.
+          VITE_FUNCTION_URL: ${{ secrets.FUNCTION_URL }}
+          # Phase 5: optional Sentry DSN (empty → monitoring is a no-op).
+          VITE_SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: |
-          echo "Building with injected Supabase env vars"
+          echo "Building with injected Neon env vars"
           npm run build
+      - name: Bundle budget (initial JS ≤ 300 KB gzip)
+        run: npm run check-budget
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
+
+  e2e:
+    # Manual runs only: the journey spec needs E2E_EMAIL/E2E_PASSWORD secrets
+    # for a throwaway test user (it self-skips without them; smoke always runs).
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm install --no-audit --no-fund
+      - run: npx playwright install chromium --with-deps
+      - name: Build preview bundle
+        env:
+          VITE_NEON_AUTH_URL: ${{ secrets.NEON_AUTH_URL }}
+          VITE_NEON_DATA_API_URL: ${{ secrets.NEON_DATA_API_URL }}
+          VITE_FUNCTION_URL: ${{ secrets.FUNCTION_URL }}
+        run: npm run build
+      - name: Playwright e2e
+        env:
+          E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+        run: npx playwright test
 
   deploy:
     needs: build

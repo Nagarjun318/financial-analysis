@@ -1,6 +1,6 @@
 import React from 'react';
-import { X, Loader2 } from 'lucide-react';
 import { Transaction } from '../types.ts';
+import { Modal, Button } from './ui';
 
 interface EditTransactionModalProps {
   isOpen: boolean;
@@ -16,10 +16,6 @@ const EditTransactionModal: React.FC<EditTransactionModalProps> = ({ isOpen, tra
   React.useEffect(() => {
     setFormData(transaction);
   }, [transaction]);
-
-  if (!isOpen) {
-    return null;
-  }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -42,20 +38,28 @@ const EditTransactionModal: React.FC<EditTransactionModalProps> = ({ isOpen, tra
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-      <div className="glass-panel animated-border rounded-xl shadow-xl w-full max-w-lg flex flex-col">
-        <header className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-          <h2 className="text-xl font-semibold gradient-text">Edit Transaction</h2>
-          <button
-            onClick={onClose}
-            className="p-1 rounded-full text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-            aria-label="Close modal"
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Edit Transaction"
+      footer={
+        <>
+          <Button variant="secondary" disabled={isConfirming} onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            loading={isConfirming}
+            disabled={isConfirming}
+            onClick={handleConfirmClick}
+            className="w-36"
           >
-            <X className="h-6 w-6" />
-          </button>
-        </header>
-
-        <main className="p-6 space-y-4">
+            {isConfirming ? 'Saving...' : 'Save Changes'}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
           <div>
             <label htmlFor="date" className="block text-sm font-medium text-light-text-secondary dark:text-dark-text-secondary">Date</label>
             <input
@@ -114,26 +118,8 @@ const EditTransactionModal: React.FC<EditTransactionModalProps> = ({ isOpen, tra
             />
           </div>
           {/* Budget field removed; budgeting now handled via category budgets table */}
-        </main>
-
-        <footer className="flex justify-end gap-4 p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/40 dark:bg-dark-bg/40 rounded-b-xl">
-          <button
-            onClick={onClose}
-            disabled={isConfirming}
-            className="px-4 py-2 bg-gray-200 dark:bg-gray-600 text-light-text dark:text-dark-text rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors disabled:opacity-70"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleConfirmClick}
-            disabled={isConfirming}
-            className="flex items-center justify-center gap-2 w-36 px-4 py-2 bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition-colors disabled:opacity-70"
-          >
-            {isConfirming ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Save Changes'}
-          </button>
-        </footer>
       </div>
-    </div>
+    </Modal>
   );
 };
 

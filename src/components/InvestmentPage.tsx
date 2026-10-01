@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   TrendingUp,
-  DollarSign,
   PieChart,
   Plus,
   Trash2,
@@ -11,10 +10,8 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Wallet,
-  Target,
   Loader2,
   X,
-  Sparkles,
   Settings,
   Activity
 } from 'lucide-react';
@@ -26,27 +23,24 @@ import {
   Tooltip as ReTooltip,
   Legend
 } from 'recharts';
-import { callGeminiAPI, GEMINI_MODELS, suggestInvestmentDetails, GeminiModel } from '../services/geminiService';
+import { callGeminiAPI, GEMINI_MODELS, GeminiModel } from '../services/geminiService';
 import { formatCurrency } from '../utils';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { supabase } from '../services/supabaseClient';
-import { extractSymbol, fetchRealTimePrice, getRefreshInterval, updateInvestmentValue } from '../services/marketDataService';
+import { useInvestments, type Investment } from '../hooks/useInvestments.ts';
+import { showToast } from '../utils/toast';
+import { EmptyState } from './ui';
+import { getRefreshInterval, updateInvestmentValue } from '../services/marketDataService';
+import InvestmentFormModal, {
+  emptyInvestmentForm,
+  getModelDisplayName,
+  type InvestmentFormData,
+} from './InvestmentFormModal.tsx';
+import { paletteColor } from './charts/chartTheme.ts';
 
 // --- Types ---
-interface Investment {
-  id: string;
-  name: string;
-  type: 'Stock' | 'Mutual Fund' | 'Crypto' | 'Gold' | 'Real Estate' | 'Bond' | 'ETF' | 'Other';
-  investedAmount: number;
-  currentValue: number;
-  date: string;
-  notes?: string;
-  quantity?: number;
-  symbol?: string;
-  lastUpdated?: string;
-  autoRefresh?: boolean;
-}
+// Investment comes from the shared useInvestments hook (single source of
+// truth for the investments table shape + fetching).
 
 interface PortfolioSummary {
   totalInvested: number;
@@ -56,71 +50,39 @@ interface PortfolioSummary {
 }
 
 // --- Constants ---
-const INVESTMENT_TYPES = ['Stock', 'Mutual Fund', 'Crypto', 'Gold', 'Real Estate', 'Bond', 'ETF', 'Other'];
-const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4', '#f97316', '#64748b'];
 
 interface InvestmentPageProps {
   userId?: string;
 }
 
 const InvestmentPage: React.FC<InvestmentPageProps> = ({ userId }) => {
+  // --- Shared data layer (was hand-rolled fetch + transform, now unified) ---
+  const {
+    investments,
+    isLoading,
+    error,
+    refreshInvestments,
+    addInvestment,
+    updateInvestment,
+    deleteInvestment,
+  } = useInvestments(userId);
+
   // --- State ---
-  const [investments, setInvestments] = useState<Investment[]>([]);
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [isSuggestingDetails, setIsSuggestingDetails] = useState(false);
-  const [selectedModel, setSelectedModel] = useState<GeminiModel>(GEMINI_MODELS.FLASH_LITE);
-  const [showModelSelector, setShowModelSelector] = useState(false);
   const [selectedAnalyzeModel, setSelectedAnalyzeModel] = useState<GeminiModel>(GEMINI_MODELS.PRO_LATEST);
   const [showAnalyzeModelSelector, setShowAnalyzeModelSelector] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(false);
   const [lastRefreshTime, setLastRefreshTime] = useState<Date | null>(null);
+  // Form modal state (draft lives inside InvestmentFormModal).
+  const [formState, setFormState] = useState<{ id: string | null; initial: InvestmentFormData } | null>(null);
 
-  const modelSelectorRef = useRef<HTMLDivElement>(null);
   const analyzeModelSelectorRef = useRef<HTMLDivElement>(null);
   const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Form State
-  const [formData, setFormData] = useState<Omit<Investment, 'id'>>({
-    name: '',
-    type: 'Stock',
-    investedAmount: 0,
-    currentValue: 0,
-    date: new Date().toISOString().split('T')[0],
-    notes: '',
-    quantity: undefined,
-    symbol: undefined
-  });
-
   // --- Effects ---
-  // Load investments from Supabase
-  useEffect(() => {
-    if (userId) {
-      loadInvestments();
-    } else {
-      setIsLoading(false);
-      setInvestments([]);
-    }
-  }, [userId]);
-
-  // Click outside to close model selector
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (modelSelectorRef.current && !modelSelectorRef.current.contains(event.target as Node)) {
-        setShowModelSelector(false);
-      }
-    };
-
-    if (showModelSelector) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }
-  }, [showModelSelector]);
+  // Loading is owned by useInvestments (scoped per userId, cached by query).
 
   // Click outside to close analyze model selector
   useEffect(() => {
@@ -136,98 +98,11 @@ const InvestmentPage: React.FC<InvestmentPageProps> = ({ userId }) => {
     }
   }, [showAnalyzeModelSelector]);
 
-  // AI Investment Details Suggestion with debounce
-  useEffect(() => {
-    const suggestDetails = async () => {
-      // Only suggest for new investments, not when editing
-      if (editingId || !formData.name || formData.name.trim().length < 3) {
-        return;
-      }
-
-      setIsSuggestingDetails(true);
-      try {
-        const suggested = await suggestInvestmentDetails(
-          formData.name,
-          investments.map((inv: Investment) => ({
-            name: inv.name,
-            type: inv.type,
-            investedAmount: inv.investedAmount,
-            currentValue: inv.currentValue
-          })),
-          selectedModel
-        );
-
-        // Update form fields with AI suggestions
-        const detectedSymbol = extractSymbol(formData.name, suggested.type);
-        setFormData((prev: Omit<Investment, 'id'>) => ({
-          ...prev,
-          type: suggested.type,
-          investedAmount: suggested.investedAmount > 0 ? suggested.investedAmount : prev.investedAmount,
-          currentValue: suggested.currentValue > 0 ? suggested.currentValue : prev.currentValue,
-          notes: suggested.notes || prev.notes,
-          symbol: detectedSymbol || prev.symbol
-        }));
-      } catch (error) {
-        console.error('Investment details suggestion error:', error);
-      } finally {
-        setIsSuggestingDetails(false);
-      }
-    };
-
-    // Debounce the API call
-    const timeoutId = setTimeout(suggestDetails, 800);
-    return () => clearTimeout(timeoutId);
-  }, [formData.name, editingId]);
-
-  const loadInvestments = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      if (!supabase) {
-        throw new Error('Database connection not available');
-      }
-      if (!userId) {
-        setInvestments([]);
-        setIsLoading(false);
-        return;
-      }
-      const { data, error: fetchError } = await supabase
-        .from('investments')
-        .select('*')
-        .eq('user_id', userId)
-        .order('date', { ascending: false });
-
-      if (fetchError) throw fetchError;
-
-      // Transform database format to component format
-      const transformedData: Investment[] = (data || []).map((item: any) => ({
-        id: item.id,
-        name: item.name,
-        type: item.type,
-        investedAmount: parseFloat(item.invested_amount),
-        currentValue: parseFloat(item.current_value),
-        date: item.date,
-        notes: item.notes || '',
-        quantity: item.quantity || undefined,
-        symbol: item.symbol || undefined,
-        lastUpdated: item.last_updated || undefined,
-        autoRefresh: item.auto_refresh || false
-      }));
-
-      setInvestments(transformedData);
-    } catch (err) {
-      console.error('Error loading investments:', err);
-      setError('Failed to load investments');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   // Refresh real-time prices
   const refreshPrices = async () => {
     if (investments.length === 0) return;
     if (!userId) {
-      alert('Please log in to refresh prices');
+      showToast('Please log in to refresh prices', 'error');
       return;
     }
     
@@ -261,18 +136,17 @@ const InvestmentPage: React.FC<InvestmentPageProps> = ({ userId }) => {
         }
       }
       
-      // Update database and local state
-      if (updates.length > 0 && supabase) {
+      // Persist via the shared hook (invalidates the investments query)
+      if (updates.length > 0) {
         for (const update of updates) {
-          await supabase
-            .from('investments')
-            .update({ current_value: update.currentValue, last_updated: update.lastUpdated })
-            .eq('id', update.id)
-            .eq('user_id', userId);
+          await updateInvestment(update.id, {
+            currentValue: update.currentValue,
+            lastUpdated: update.lastUpdated,
+          });
         }
-        
+
         // Reload investments to get updated values
-        await loadInvestments();
+        await refreshInvestments();
         setLastRefreshTime(new Date());
       }
     } catch (error) {
@@ -329,117 +203,57 @@ const InvestmentPage: React.FC<InvestmentPageProps> = ({ userId }) => {
   }, [investments]);
 
   // --- Handlers ---
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setFormData((prev: Omit<Investment, 'id'>) => ({
-      ...prev,
-      [name]: name === 'investedAmount' || name === 'currentValue' ? parseFloat(value) || 0 : value
-    }));
-  };
+  const openBlankForm = () =>
+    setFormState({ id: null, initial: emptyInvestmentForm() });
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const closeModal = () => setFormState(null);
+
+  const handleFormSubmit = async (data: InvestmentFormData) => {
     try {
-      if (!supabase) {
-        throw new Error('Database connection not available');
-      }
       if (!userId) {
-        alert('Please log in to add or edit investments');
+        showToast('Please log in to add or edit investments', 'error');
         return;
       }
-      
-      const dbData = {
-        name: formData.name,
-        type: formData.type,
-        invested_amount: formData.investedAmount,
-        current_value: formData.currentValue,
-        date: formData.date,
-        notes: formData.notes || null,
-        quantity: formData.quantity || null,
-        symbol: formData.symbol || null,
-        user_id: userId
-      };
-
+      const editingId = formState?.id;
       if (editingId) {
-        // Update existing investment
-        const { error: updateError } = await supabase
-          .from('investments')
-          .update(dbData)
-          .eq('id', editingId)
-          .eq('user_id', userId);
-
-        if (updateError) throw updateError;
+        await updateInvestment(editingId, data);
       } else {
-        // Insert new investment
-        const { error: insertError } = await supabase
-          .from('investments')
-          .insert([dbData]);
-
-        if (insertError) throw insertError;
+        await addInvestment(data);
       }
-
-      // Reload investments from database
-      await loadInvestments();
       closeModal();
     } catch (err) {
       console.error('Error saving investment:', err);
-      alert('Failed to save investment. Please try again.');
+      showToast('Failed to save investment. Please try again.', 'error');
     }
   };
 
-  const closeModal = () => {
-    setIsAddModalOpen(false);
-    setEditingId(null);
-    setFormData({
-      name: '',
-      type: 'Stock',
-      investedAmount: 0,
-      currentValue: 0,
-      date: new Date().toISOString().split('T')[0],
-      notes: '',
-      quantity: undefined,
-      symbol: undefined
-    });
-  };
-
   const handleEdit = (inv: Investment) => {
-    setFormData({
-      name: inv.name,
-      type: inv.type,
-      investedAmount: inv.investedAmount,
-      currentValue: inv.currentValue,
-      date: inv.date,
-      notes: inv.notes,
-      quantity: inv.quantity,
-      symbol: inv.symbol
+    setFormState({
+      id: inv.id,
+      initial: {
+        name: inv.name,
+        type: inv.type,
+        investedAmount: inv.investedAmount,
+        currentValue: inv.currentValue,
+        date: inv.date,
+        notes: inv.notes,
+        quantity: inv.quantity,
+        symbol: inv.symbol,
+      },
     });
-    setEditingId(inv.id);
-    setIsAddModalOpen(true);
   };
 
   const handleDelete = async (id: string) => {
     if (confirm('Are you sure you want to delete this investment?')) {
       try {
-        if (!supabase) {
-          throw new Error('Database connection not available');
-        }
         if (!userId) {
-          alert('Please log in to delete investments');
+          showToast('Please log in to delete investments', 'error');
           return;
         }
-        const { error: deleteError } = await supabase
-          .from('investments')
-          .delete()
-          .eq('id', id)
-          .eq('user_id', userId);
-
-        if (deleteError) throw deleteError;
-
-        // Reload investments from database
-        await loadInvestments();
+        await deleteInvestment(id);
       } catch (err) {
         console.error('Error deleting investment:', err);
-        alert('Failed to delete investment. Please try again.');
+        showToast('Failed to delete investment. Please try again.', 'error');
       }
     }
   };
@@ -477,16 +291,7 @@ const InvestmentPage: React.FC<InvestmentPageProps> = ({ userId }) => {
     }
   };
 
-  const getModelDisplayName = (model: GeminiModel): string => {
-    switch (model) {
-      case GEMINI_MODELS.PRO_LATEST: return 'Pro';
-      case GEMINI_MODELS.FLASH_LATEST: return 'Flash';
-      case GEMINI_MODELS.FLASH_2_0: return 'Flash 2.0';
-      case GEMINI_MODELS.FLASH_LITE: return 'Flash Lite';
-      case GEMINI_MODELS.GEMMA_3: return 'Gemma 3';
-      default: return 'Flash Lite';
-    }
-  };
+
 
   // --- Render ---
   // Show loading state
@@ -512,7 +317,7 @@ const InvestmentPage: React.FC<InvestmentPageProps> = ({ userId }) => {
           <h3 className="text-xl font-semibold text-light-text dark:text-dark-text mb-2">Error Loading Investments</h3>
           <p className="text-light-text-secondary dark:text-dark-text-secondary mb-4">{error}</p>
           <button
-            onClick={loadInvestments}
+            onClick={() => refreshInvestments()}
             className="px-6 py-2 bg-brand-primary text-white rounded-lg hover:opacity-90 transition-all"
           >
             Try Again
@@ -601,7 +406,7 @@ const InvestmentPage: React.FC<InvestmentPageProps> = ({ userId }) => {
           </button>
 
           <button
-            onClick={() => setIsAddModalOpen(true)}
+            onClick={openBlankForm}
             className="flex items-center gap-2 px-4 py-2 bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition-all shadow-lg shadow-brand-primary/20"
           >
             <Plus className="w-4 h-4" />
@@ -684,7 +489,7 @@ const InvestmentPage: React.FC<InvestmentPageProps> = ({ userId }) => {
                     dataKey="value"
                   >
                     {allocationData.map((entry: { name: string; value: number }, index: number) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      <Cell key={`cell-${index}`} fill={paletteColor(index)} />
                     ))}
                   </Pie>
                   <ReTooltip
@@ -715,14 +520,13 @@ const InvestmentPage: React.FC<InvestmentPageProps> = ({ userId }) => {
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
-                  h1: ({ node, ...props }: any) => <h1 className="text-xl font-bold mb-3 text-light-text dark:text-dark-text" {...props} />,
-                  h2: ({ node, ...props }: any) => <h2 className="text-lg font-bold mb-2 mt-4 text-light-text dark:text-dark-text" {...props} />,
-                  h3: ({ node, ...props }: any) => <h3 className="text-md font-bold mb-2 mt-3 text-light-text dark:text-dark-text" {...props} />,
-                  p: ({ node, ...props }: any) => <p className="mb-2 text-light-text dark:text-dark-text leading-relaxed" {...props} />,
-                  ul: ({ node, ...props }: any) => <ul className="list-disc pl-5 mb-2 space-y-1 text-light-text dark:text-dark-text" {...props} />,
-                  li: ({ node, ...props }: any) => <li className="pl-1" {...props} />,
-                  strong: ({ node, ...props }: any) => <strong className="font-semibold text-brand-primary dark:text-brand-secondary" {...props} />,
-                }}
+                  h1: ({ ...props }: any) => <h1 className="text-xl font-bold mb-3 text-light-text dark:text-dark-text" {...props} />,
+                  h2: ({ ...props }: any) => <h2 className="text-lg font-bold mb-2 mt-4 text-light-text dark:text-dark-text" {...props} />,
+                  h3: ({ ...props }: any) => <h3 className="text-md font-bold mb-2 mt-3 text-light-text dark:text-dark-text" {...props} />,
+                  p: ({ ...props }: any) => <p className="mb-2 text-light-text dark:text-dark-text leading-relaxed" {...props} />,
+                  ul: ({ ...props }: any) => <ul className="list-disc pl-5 mb-2 space-y-1 text-light-text dark:text-dark-text" {...props} />,
+                  li: ({ ...props }: any) => <li className="pl-1" {...props} />,
+                  strong: ({ ...props }: any) => <strong className="font-semibold text-brand-primary dark:text-brand-secondary" {...props} /> }}
               >
                 {aiAnalysis}
               </ReactMarkdown>
@@ -828,8 +632,11 @@ const InvestmentPage: React.FC<InvestmentPageProps> = ({ userId }) => {
                 })
               ) : (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-light-text-secondary dark:text-dark-text-secondary">
-                    No investments added yet. Click "Add Investment" to get started.
+                  <td colSpan={6}>
+                    <EmptyState
+                      title="No investments yet"
+                      description='Click "Add Investment" to get started.'
+                    />
                   </td>
                 </tr>
               )}
@@ -838,226 +645,16 @@ const InvestmentPage: React.FC<InvestmentPageProps> = ({ userId }) => {
         </div>
       </div>
 
-      {/* Add/Edit Modal */}
-      {isAddModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="glass-panel w-full max-w-md rounded-xl shadow-2xl animate-slideUp">
-            <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
-              <h2 className="text-xl font-bold gradient-text">{editingId ? 'Edit Investment' : 'New Investment'}</h2>
-              <div className="flex items-center gap-2">
-                {/* Model Selector */}
-                {!editingId && (
-                  <div className="relative" ref={modelSelectorRef}>
-                    <button
-                      type="button"
-                      onClick={() => setShowModelSelector(!showModelSelector)}
-                      className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                      title={`AI Model: ${getModelDisplayName(selectedModel)}`}
-                    >
-                      <Settings className="w-4 h-4 text-gray-600 dark:text-gray-400" />
-                    </button>
-
-                    {showModelSelector && (
-                      <div className="absolute top-full right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 py-1 z-50">
-                        {Object.values(GEMINI_MODELS).map((model) => (
-                          <button
-                            key={model}
-                            type="button"
-                            onClick={() => {
-                              setSelectedModel(model);
-                              setShowModelSelector(false);
-                            }}
-                            className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors ${
-                              selectedModel === model
-                                ? 'text-brand-primary font-medium bg-brand-primary/5'
-                                : 'text-gray-700 dark:text-gray-300'
-                            }`}
-                          >
-                            {getModelDisplayName(model)}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1 flex items-center gap-2">
-                  Asset Name
-                  {isSuggestingDetails && (
-                    <span className="flex items-center gap-1 text-brand-primary animate-pulse">
-                      <Sparkles className="h-3 w-3" />
-                      <span className="text-[10px] font-normal">AI suggesting...</span>
-                    </span>
-                  )}
-                </label>
-                <input
-                  type="text"
-                  name="name"
-                  required
-                  value={formData.name}
-                  onChange={handleInputChange}
-                  className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-brand-primary outline-none transition-all"
-                  placeholder="e.g. Apple Stock, Bitcoin, HDFC Top 100 Fund"
-                />
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  AI will auto-fill investment details based on asset name
-                </p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1 flex items-center gap-2">
-                    Type
-                    {isSuggestingDetails && <Sparkles className="h-3 w-3 text-brand-primary animate-pulse" />}
-                  </label>
-                  <select
-                    name="type"
-                    value={formData.type}
-                    onChange={handleInputChange}
-                    className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-brand-primary outline-none transition-all"
-                  >
-                    {INVESTMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Date</label>
-                  <input
-                    type="date"
-                    name="date"
-                    value={formData.date}
-                    onChange={handleInputChange}
-                    className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-brand-primary outline-none transition-all"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1 flex items-center gap-2">
-                    Invested Amount
-                    {isSuggestingDetails && <Sparkles className="h-3 w-3 text-brand-primary animate-pulse" />}
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-2 text-gray-500">₹</span>
-                    <input
-                      type="number"
-                      name="investedAmount"
-                      required
-                      min="0"
-                      step="0.01"
-                      value={formData.investedAmount}
-                      onChange={handleInputChange}
-                      className="w-full pl-8 pr-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-brand-primary outline-none transition-all"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1 flex items-center gap-2">
-                    Current Value
-                    {isSuggestingDetails && <Sparkles className="h-3 w-3 text-brand-primary animate-pulse" />}
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-2 text-gray-500">₹</span>
-                    <input
-                      type="number"
-                      name="currentValue"
-                      required
-                      min="0"
-                      step="0.01"
-                      value={formData.currentValue}
-                      onChange={handleInputChange}
-                      className="w-full pl-8 pr-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-brand-primary outline-none transition-all"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Quantity and Symbol fields for real-time tracking */}
-              {(formData.type === 'Crypto' || formData.type === 'Gold' || 
-                formData.type === 'Stock' || formData.type === 'ETF' || 
-                formData.type === 'Mutual Fund') && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-1 flex items-center gap-2">
-                      Quantity
-                      <span className="text-xs text-gray-500 dark:text-gray-400 font-normal">Optional</span>
-                    </label>
-                    <input
-                      type="number"
-                      name="quantity"
-                      min="0"
-                      step="0.00000001"
-                      value={formData.quantity || ''}
-                      onChange={handleInputChange}
-                      className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-brand-primary outline-none transition-all"
-                      placeholder="e.g., 0.5, 10"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1 flex items-center gap-2">
-                      Symbol
-                      <span className="text-xs text-gray-500 dark:text-gray-400 font-normal">Optional</span>
-                      {isSuggestingDetails && <Sparkles className="h-3 w-3 text-brand-primary animate-pulse" />}
-                    </label>
-                    <input
-                      type="text"
-                      name="symbol"
-                      value={formData.symbol || ''}
-                      onChange={handleInputChange}
-                      className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-brand-primary outline-none transition-all"
-                      placeholder="e.g., BTCUSD, AAPL"
-                    />
-                  </div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 col-span-2 -mt-2">
-                    Enter quantity and symbol to enable automatic price updates
-                  </p>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium mb-1 flex items-center gap-2">
-                  Notes (Optional)
-                  {isSuggestingDetails && <Sparkles className="h-3 w-3 text-brand-primary animate-pulse" />}
-                </label>
-                <textarea
-                  name="notes"
-                  rows={3}
-                  value={formData.notes}
-                  onChange={handleInputChange}
-                  className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-brand-primary outline-none transition-all"
-                  placeholder="Strategy, goals, etc."
-                />
-              </div>
-
-              <div className="pt-4 flex gap-3">
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  className="flex-1 px-4 py-2 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 px-4 py-2 rounded-lg bg-brand-primary text-white hover:bg-brand-primary/90 transition-colors shadow-lg shadow-brand-primary/20"
-                >
-                  {editingId ? 'Update Asset' : 'Add Asset'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {/* Add/Edit form (draft state lives in InvestmentFormModal) */}
+      {formState && (
+        <InvestmentFormModal
+          isOpen
+          editingId={formState.id}
+          initial={formState.initial}
+          existingInvestments={investments}
+          onSubmit={handleFormSubmit}
+          onClose={closeModal}
+        />
       )}
     </div>
   );

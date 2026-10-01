@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { MessageCircle, Send, Sparkles, X, Settings, Loader2, Bot, User, Target, Plus } from 'lucide-react';
+import { Send, X, Settings, Loader2, Bot, Target, Plus } from 'lucide-react';
 import { FinancialGoal } from '../types';
 import { GEMINI_MODELS, GeminiModel } from '../services/geminiService';
 import { chatAboutGoals } from '../services/netWorthAI';
@@ -44,7 +44,6 @@ export function GoalsAdvisorChat({ goals, netWorth, monthlyIncome, monthlyExpens
     const [isLoading, setIsLoading] = React.useState(false);
     const [selectedModel, setSelectedModel] = React.useState<GeminiModel>(GEMINI_MODELS.FLASH_LITE);
     const [showModelSelector, setShowModelSelector] = React.useState(false);
-    const [showSuggestions, setShowSuggestions] = React.useState(true);
 
     // Refs
     const messagesEndRef = React.useRef<HTMLDivElement>(null);
@@ -131,7 +130,6 @@ export function GoalsAdvisorChat({ goals, netWorth, monthlyIncome, monthlyExpens
         setMessages((prev: Message[]) => [...prev, userMessage]);
         setInput('');
         setIsLoading(true);
-        setShowSuggestions(false);
 
         try {
             const response = await chatAboutGoals(
@@ -164,26 +162,6 @@ export function GoalsAdvisorChat({ goals, netWorth, monthlyIncome, monthlyExpens
             setIsLoading(false);
         }
     };
-
-    const getSuggestions = React.useMemo(() => {
-        const suggestions: string[] = [];
-        if (messages.length <= 2) {
-            suggestions.push(
-                "How can I achieve my goals faster?",
-                "Which goal should I prioritize?",
-                "Am I saving enough?",
-                "Investment strategies for goals"
-            );
-        } else {
-            suggestions.push(
-                "Review my goal timeline",
-                "Suggest a savings plan",
-                "How to balance multiple goals?",
-                "Risk assessment for my goals"
-            );
-        }
-        return suggestions.slice(0, 4);
-    }, [messages.length]);
 
     const getModelDisplayName = (model: GeminiModel): string => {
         switch (model) {

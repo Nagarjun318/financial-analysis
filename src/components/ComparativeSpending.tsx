@@ -1,13 +1,15 @@
 import React from 'react';
 import { Transaction } from '../types';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { formatCurrency } from '../utils';
+import { useChartTheme } from './charts/chartTheme.ts';
 
 interface ComparativeSpendingProps {
     transactions: Transaction[];
 }
 
 export const ComparativeSpending: React.FC<ComparativeSpendingProps> = ({ transactions }) => {
+    const theme = useChartTheme();
     const data = React.useMemo(() => {
         const today = new Date();
         const currentMonth = today.getMonth();
@@ -74,13 +76,13 @@ export const ComparativeSpending: React.FC<ComparativeSpendingProps> = ({ transa
                     layout="vertical"
                     margin={{ top: 5, right: 30, left: 40, bottom: 5 }}
                 >
-                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#e5e7eb" />
+                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke={theme.grid} />
                     <XAxis type="number" hide />
                     <YAxis
                         type="category"
                         dataKey="name"
                         width={140}
-                        tick={{ fontSize: 12, fill: '#6b7280' }}
+                        tick={{ fontSize: 12, fill: theme.tick }}
                         axisLine={false}
                         tickLine={false}
                     />

@@ -20,8 +20,8 @@ VITE_INDIAN_API_KEY=your_actual_api_key_here
 
 **Example `.env.local` file:**
 ```env
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+VITE_NEON_AUTH_URL=https://<endpoint>.neonauth.<region>.aws.neon.tech/neondb/auth
+VITE_NEON_DATA_API_URL=https://<endpoint>.apirest.<region>.aws.neon.tech/neondb/rest/v1
 VITE_GEMINI_API_KEY=your_gemini_api_key
 VITE_INDIAN_API_KEY=ind_api_xxxxxxxxxxxxx
 ```

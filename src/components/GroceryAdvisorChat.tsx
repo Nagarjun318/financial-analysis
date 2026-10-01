@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { MessageCircle, Send, Sparkles, X, Settings, Loader2, Bot, User, Trash2, ShoppingCart, Plus, Utensils } from 'lucide-react';
+import { Send, X, Settings, Loader2, Bot, ShoppingCart, Plus, Utensils } from 'lucide-react';
 import { GEMINI_MODELS, GeminiModel } from '../services/geminiService';
 import { getKitchenAssistance } from '../services/geminiService';
 import ReactMarkdown from 'react-markdown';

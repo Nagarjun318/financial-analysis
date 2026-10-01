@@ -1,16 +1,16 @@
 # Investment Portfolio - Database Setup Guide
 
 ## Overview
-The Investment Portfolio feature has been migrated from localStorage to Supabase database for better data persistence, scalability, and multi-device sync.
+The Investment Portfolio feature is backed by the Neon Postgres `investments`
+table (see `NEON_SCHEMA.sql`) for data persistence, scalability, and
+multi-device sync.
 
 ## Database Setup Instructions
 
-### Step 1: Run the SQL Schema
-1. Open your Supabase project dashboard
-2. Navigate to the **SQL Editor**
-3. Open the file `INVESTMENT_SCHEMA.sql` from this project
-4. Copy and paste the entire SQL script into the SQL Editor
-5. Click **Run** to execute the script
+The schema is applied automatically from `NEON_SCHEMA.sql`. To verify:
+
+1. Check the `investments` table exists with `neon data-api get` + schema refresh
+2. Or query directly over `DATABASE_URL_UNPOOLED`
 
 This will create:
 - `investments` table with proper columns
@@ -19,8 +19,8 @@ This will create:
 - Auto-update triggers for timestamps
 
 ### Step 2: Verify Table Creation
-1. Go to **Table Editor** in Supabase
-2. You should see a new table called `investments`
+1. Check the `investments` table in Neon (SQL Editor or `DATABASE_URL_UNPOOLED`)
+2. You should see a table called `investments`
 3. Check that it has the following columns:
    - `id` (UUID, Primary Key)
    - `name` (TEXT)
@@ -35,13 +35,13 @@ This will create:
 ### Step 3: Test the Application
 1. Navigate to the Investment page in your app
 2. Try adding a new investment
-3. Verify it appears in the Supabase Table Editor
+3. Verify it persists after reload
 4. Test editing and deleting investments
 
 ## Features
 
 ### ✅ What's New
-- **Database Persistence**: All investments are now stored in Supabase
+- **Database Persistence**: All investments are stored in Neon Postgres
 - **Loading States**: Beautiful loading spinner while fetching data
 - **Error Handling**: Graceful error messages with retry functionality
 - **Real-time Sync**: Changes are immediately reflected in the database
@@ -107,27 +107,17 @@ const { error } = await supabase
 ## Security
 
 ### Row Level Security (RLS)
-Currently, the table has a permissive policy allowing all operations. For production:
-
-1. **Enable Authentication**: Set up Supabase Auth
-2. **Add User Column**: Add `user_id` to the investments table
-3. **Update Policies**: Restrict access to user's own data:
+The `investments` table enforces per-user access through Neon Auth:
 
 ```sql
--- Example: User-specific policy
-CREATE POLICY "Users can only see their own investments" ON investments
-    FOR SELECT
-    USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can only insert their own investments" ON investments
-    FOR INSERT
-    WITH CHECK (auth.uid() = user_id);
+CREATE POLICY manage_own_rows ON investments FOR ALL TO authenticated
+  USING (auth.user_id() = user_id) WITH CHECK (auth.user_id() = user_id);
 ```
 
 ## Troubleshooting
 
 ### Error: "Failed to load investments"
-- Check your Supabase connection in `supabaseClient.ts`
+- Check your Neon configuration (`neon status`, `VITE_NEON_*` env vars)
 - Verify the `investments` table exists
 - Check browser console for detailed error messages
 
@@ -137,7 +127,7 @@ CREATE POLICY "Users can only insert their own investments" ON investments
 - Verify RLS policies allow the operation
 
 ### Data Not Showing
-- Check the Supabase Table Editor to see if data exists
+- Query the `investments` table directly to see if data exists
 - Clear browser cache and reload
 - Check network tab for API errors
 
@@ -155,6 +145,6 @@ Potential improvements:
 
 If you encounter issues:
 1. Check the browser console for errors
-2. Verify Supabase connection settings
-3. Ensure the SQL schema was executed successfully
-4. Check Supabase logs in the dashboard
+2. Verify Neon env vars and `neon data-api get` status
+3. Ensure `NEON_SCHEMA.sql` was applied and the Data API schema cache refreshed
+4. Check Neon branch logs (`neon logs query`)

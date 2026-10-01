@@ -1,21 +1,12 @@
 /**
  * Market Data Service - Real-time investment value tracking
  * Supports stocks, crypto, gold, and other asset types
+ *
+ * Phase 4: prices go through the `api` Function when configured (the
+ * IndianAPI key stays server-side); direct provider calls remain only as a
+ * local-dev fallback. Client-side TTL caches (Phase 3) still apply.
  */
-
-interface MarketPrice {
-  symbol: string;
-  price: number;
-  change: number;
-  changePercent: number;
-  lastUpdated: string;
-}
-
-interface AssetSymbolMapping {
-  name: string;
-  symbol: string;
-  type: string;
-}
+import { apiFetch, isFunctionConfigured } from './apiClient.ts';
 
 // Common asset mappings
 const CRYPTO_SYMBOLS: Record<string, string> = {
@@ -30,8 +21,6 @@ const CRYPTO_SYMBOLS: Record<string, string> = {
   'ripple': 'XRPUSD',
   'xrp': 'XRPUSD',
 };
-
-const GOLD_SYMBOLS = ['gold', 'gold etf', 'sovereign gold bond', 'sgb', 'digital gold'];
 
 // Indian Market Symbols for IndianAPI.in
 const INDIAN_STOCKS: Record<string, string> = {
@@ -83,6 +72,92 @@ const INDIAN_MUTUAL_FUNDS: Record<string, string> = {
 };
 
 /**
+ * In-memory TTL cache for market prices (Phase 3). Every auto-refresh tick
+ * and every investment row would otherwise hit IndianAPI/CoinGecko directly.
+ * Historical prices are immutable per (symbol, date) → 24 h TTL; real-time
+ * prices follow the per-type refresh cadence. Bounded at 200 entries each.
+ * (Persistent `market_cache` table is the follow-up for cross-session reuse.)
+ */
+const MARKET_CACHE_MAX_ENTRIES = 200;
+const HISTORICAL_TTL_MS = 24 * 60 * 60 * 1000;
+const REALTIME_TTL_BY_TYPE: Record<string, number> = {
+  Crypto: 30 * 1000,
+  Stock: 60 * 1000,
+  ETF: 60 * 1000,
+  Gold: 5 * 60 * 1000,
+  'Mutual Fund': 5 * 60 * 1000,
+};
+const historicalCache = new Map<string, { price: number | null; expiresAt: number }>();
+const realtimeCache = new Map<string, { price: number | null; expiresAt: number }>();
+
+export function clearMarketCache(): void {
+  historicalCache.clear();
+  realtimeCache.clear();
+}
+
+function readCache(
+  cache: Map<string, { price: number | null; expiresAt: number }>,
+  key: string
+): { hit: boolean; price: number | null } {
+  const entry = cache.get(key);
+  if (!entry) return { hit: false, price: null };
+  if (entry.expiresAt <= Date.now()) {
+    cache.delete(key);
+    return { hit: false, price: null };
+  }
+  return { hit: true, price: entry.price };
+}
+
+function writeCache(
+  cache: Map<string, { price: number | null; expiresAt: number }>,
+  key: string,
+  price: number | null,
+  ttlMs: number
+): void {
+  if (cache.size >= MARKET_CACHE_MAX_ENTRIES) {
+    const oldest = cache.keys().next();
+    if (!oldest.done) cache.delete(oldest.value);
+  }
+  cache.set(key, { price, expiresAt: Date.now() + ttlMs });
+}
+
+/** Phase 4: Function proxy (keys stay server-side); null when unusable. */
+async function serverPrice(
+  path: '/api/market/price' | '/api/market/historical',
+  query: Record<string, string>
+): Promise<number | null | undefined> {
+  if (!isFunctionConfigured()) return undefined;
+  try {
+    const data = await apiFetch<{ price: number | null }>(path, { query });
+    return typeof data?.price === 'number' ? data.price : data?.price ?? null;
+  } catch {
+    return undefined;
+  }
+}
+
+async function cachedHistoricalPrice(symbol: string, type: string, date: string): Promise<number | null> {
+  const key = `hist::${symbol}::${type}::${date}`;
+  const { hit, price } = readCache(historicalCache, key);
+  if (hit) return price;
+  const fresh =
+    (await serverPrice('/api/market/historical', { symbol, type, date })) ??
+    (await fetchHistoricalPrice(symbol, type, date));
+  writeCache(historicalCache, key, fresh, HISTORICAL_TTL_MS);
+  return fresh;
+}
+
+async function cachedRealTimePrice(symbol: string, type: string): Promise<number | null> {
+  const key = `rt::${symbol}::${type}`;
+  const { hit, price } = readCache(realtimeCache, key);
+  if (hit) return price;
+  const fresh =
+    (await serverPrice('/api/market/price', { symbol, type })) ??
+    (await fetchRealTimePrice(symbol, type));
+  writeCache(realtimeCache, key, fresh, REALTIME_TTL_BY_TYPE[type] ?? 5 * 60 * 1000);
+  return fresh;
+}
+
+/**
  * Extract ticker symbol from investment name
  */
 export function extractSymbol(name: string, type: string): string | null {
@@ -98,12 +173,10 @@ export function extractSymbol(name: string, type: string): string | null {
       // It's a Gold ETF, not physical gold
       for (const [key, symbol] of Object.entries(INDIAN_ETFS)) {
         if (nameLower.includes(key)) {
-          console.log(`Detected Gold ETF: ${name} → ${symbol}`);
           return symbol;
         }
       }
       // Default gold ETF
-      console.log(`Detected Gold ETF (default): ${name} → GOLDSHARE`);
       return 'GOLDSHARE';
     }
   }
@@ -120,7 +193,6 @@ export function extractSymbol(name: string, type: string): string | null {
   
   // Physical Gold (only if not an ETF)
   if (type === 'Gold') {
-    console.log(`Detected Physical Gold: ${name} → XAUUSD`);
     return 'XAUUSD'; // Gold spot price in USD
   }
   
@@ -171,7 +243,6 @@ export async function fetchHistoricalPrice(symbol: string, type: string, date: s
     const isGoldEtf = goldEtfSymbols.includes(symbol);
     
     if (isGoldEtf) {
-      console.log(`${symbol} is a Gold ETF, using IndianAPI.in for historical data`);
       // Override type to ensure it uses stock API
       type = 'ETF';
     }
@@ -267,7 +338,6 @@ export async function fetchHistoricalPrice(symbol: string, type: string, date: s
             if (closestPeriod.nsePrice) {
               const price = parseFloat(closestPeriod.nsePrice);
               if (!isNaN(price)) {
-                console.log(`Historical price for ${symbol} (~${closestPeriod.days} days ago): ₹${price}`);
                 return price;
               }
             }
@@ -318,7 +388,6 @@ export async function fetchRealTimePrice(symbol: string, type: string): Promise<
     const isGoldEtf = goldEtfSymbols.includes(symbol);
     
     if (isGoldEtf) {
-      console.log(`${symbol} is a Gold ETF, using IndianAPI.in stock endpoint`);
       // Override type to ensure it uses stock API
       type = 'ETF';
     }
@@ -387,7 +456,6 @@ export async function fetchRealTimePrice(symbol: string, type: string): Promise<
           if (data.currentPrice?.NSE) {
             const price = parseFloat(data.currentPrice.NSE);
             if (!isNaN(price)) {
-              console.log(`Fetched ${symbol} price from NSE: ₹${price}`);
               return price;
             }
           }
@@ -396,7 +464,6 @@ export async function fetchRealTimePrice(symbol: string, type: string): Promise<
           if (data.currentPrice?.BSE) {
             const price = parseFloat(data.currentPrice.BSE);
             if (!isNaN(price)) {
-              console.log(`Fetched ${symbol} price from BSE: ₹${price}`);
               return price;
             }
           }
@@ -437,7 +504,6 @@ export async function fetchRealTimePrice(symbol: string, type: string): Promise<
           if (data.nav) {
             const price = parseFloat(data.nav);
             if (!isNaN(price)) {
-              console.log(`Fetched ${symbol} NAV: ₹${price}`);
               return price;
             }
           }
@@ -476,48 +542,30 @@ export async function updateInvestmentValue(
   investment: { name: string; type: string; investedAmount: number; date: string },
   quantity?: number
 ): Promise<number | null> {
-  console.log('\n=== UPDATE INVESTMENT VALUE ===');
-  console.log('Investment:', {
-    name: investment.name,
-    type: investment.type,
-    investedAmount: investment.investedAmount,
-    date: investment.date,
-    quantity: quantity
-  });
-  
+
   const symbol = extractSymbol(investment.name, investment.type);
   
-  console.log('Extracted Symbol:', symbol);
   
   if (!symbol) {
-    console.log(`❌ No symbol found for ${investment.name}`);
     return null;
   }
   
-  const currentPrice = await fetchRealTimePrice(symbol, investment.type);
+  const currentPrice = await cachedRealTimePrice(symbol, investment.type);
   
-  console.log('Current Market Price:', currentPrice);
   
   if (!currentPrice) {
-    console.log(`❌ No price data available for ${symbol}`);
     return null;
   }
   
   // If quantity is provided, calculate based on quantity * price
   if (quantity && quantity > 0) {
     const calculatedValue = quantity * currentPrice;
-    console.log('\n--- QUANTITY-BASED CALCULATION ---');
-    console.log(`Quantity: ${quantity}`);
-    console.log(`Current Price: ₹${currentPrice}`);
-    console.log(`Current Value = ${quantity} × ₹${currentPrice} = ₹${calculatedValue.toFixed(2)}`);
-    console.log('================================\n');
     return calculatedValue;
   }
   
   // Calculate based on invested amount and market growth since investment date
-  const historicalPrice = await fetchHistoricalPrice(symbol, investment.type, investment.date);
+  const historicalPrice = await cachedHistoricalPrice(symbol, investment.type, investment.date);
   
-  console.log('Historical Price (on investment date):', historicalPrice);
   
   if (historicalPrice && historicalPrice > 0) {
     // Calculate percentage change
@@ -526,18 +574,10 @@ export async function updateInvestmentValue(
     // Apply to invested amount
     const currentValue = investment.investedAmount * (1 + priceChangePercent);
     
-    console.log('\n--- MARKET-GROWTH CALCULATION ---');
-    console.log(`Historical Price: ₹${historicalPrice}`);
-    console.log(`Current Price: ₹${currentPrice}`);
-    console.log(`Price Change: ${(priceChangePercent * 100).toFixed(2)}%`);
-    console.log(`Invested Amount: ₹${investment.investedAmount}`);
-    console.log(`Current Value = ₹${investment.investedAmount} × (1 + ${(priceChangePercent * 100).toFixed(2)}%) = ₹${currentValue.toFixed(2)}`);
-    console.log('================================\n');
     
     return currentValue;
   }
   
-  console.log('❌ No historical data available, cannot calculate returns');
   // If no historical data, estimate quantity from current price
   // Assume user bought at roughly current price if no historical data available
   return null;
@@ -554,7 +594,7 @@ export async function batchUpdateInvestmentValues(
   for (const investment of investments) {
     const symbol = extractSymbol(investment.name, investment.type);
     if (symbol && (investment.type === 'Crypto' || investment.type === 'Gold')) {
-      const price = await fetchRealTimePrice(symbol, investment.type);
+      const price = await cachedRealTimePrice(symbol, investment.type);
       if (price) {
         // For crypto/gold, we need to know quantity
         // Estimate: if user hasn't changed value, calculate based on initial investment

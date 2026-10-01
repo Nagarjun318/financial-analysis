@@ -1,6 +1,7 @@
 import React from 'react';
-import { X, Save, Trash2 } from 'lucide-react';
+import { Save, Trash2 } from 'lucide-react';
 import { Asset, Liability } from '../domain/networth/calculateNetWorth';
+import { Modal, Button } from './ui';
 
 interface NetWorthEditModalProps {
     isOpen: boolean;
@@ -48,7 +49,9 @@ export const NetWorthEditModal: React.FC<NetWorthEditModalProps> = ({
         }
     }, [isOpen, initialData, type]);
 
-    if (!isOpen) return null;
+    const title = initialData?.id
+        ? `Edit ${type === 'asset' ? 'Asset' : 'Liability'}`
+        : `Add ${type === 'asset' ? 'Asset' : 'Liability'}`;
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -79,21 +82,39 @@ export const NetWorthEditModal: React.FC<NetWorthEditModalProps> = ({
     };
 
     return (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-lg border border-gray-200 dark:border-gray-700 flex flex-col max-h-[90vh]">
-                <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-                    <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                        {initialData?.id ? `Edit ${type === 'asset' ? 'Asset' : 'Liability'}` : `Add ${type === 'asset' ? 'Asset' : 'Liability'}`}
-                    </h2>
-                    <button
-                        onClick={onClose}
-                        className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+        <Modal
+            isOpen={isOpen}
+            onClose={onClose}
+            title={title}
+            footer={
+                <>
+                    {initialData?.id && onDelete && (
+                        <Button
+                            variant="danger"
+                            disabled={isSubmitting}
+                            onClick={handleDelete}
+                            className="mr-auto"
+                        >
+                            <Trash2 className="w-4 h-4" aria-hidden="true" />
+                            Delete
+                        </Button>
+                    )}
+                    <Button variant="secondary" disabled={isSubmitting} onClick={onClose}>
+                        Cancel
+                    </Button>
+                    <Button
+                        variant="primary"
+                        loading={isSubmitting}
+                        disabled={isSubmitting}
+                        onClick={handleSubmit}
                     >
-                        <X className="w-5 h-5 text-gray-500" />
-                    </button>
-                </div>
-
-                <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-4">
+                        <Save className="w-4 h-4" aria-hidden="true" />
+                        {isSubmitting ? 'Saving...' : 'Save'}
+                    </Button>
+                </>
+            }
+        >
+            <form onSubmit={handleSubmit} className="space-y-4">
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                             Name
@@ -239,41 +260,6 @@ export const NetWorthEditModal: React.FC<NetWorthEditModalProps> = ({
                         </>
                     )}
                 </form>
-
-                <div className="p-6 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between gap-4">
-                    {initialData?.id && onDelete ? (
-                        <button
-                            type="button"
-                            onClick={handleDelete}
-                            disabled={isSubmitting}
-                            className="px-4 py-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors flex items-center gap-2"
-                        >
-                            <Trash2 className="w-4 h-4" />
-                            Delete
-                        </button>
-                    ) : (
-                        <div></div>
-                    )}
-                    <div className="flex items-center gap-3">
-                        <button
-                            type="button"
-                            onClick={onClose}
-                            disabled={isSubmitting}
-                            className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            onClick={handleSubmit}
-                            disabled={isSubmitting}
-                            className="px-6 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:shadow-lg hover:scale-105 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-                        >
-                            <Save className="w-4 h-4" />
-                            {isSubmitting ? 'Saving...' : 'Save'}
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
+        </Modal>
     );
 };

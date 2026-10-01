@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '../services/supabaseClient';
+import { client as supabase } from '../services/neonClient';
 import { HomeService, ServiceHistory, ServiceStatistics } from '../types';
 
 export function useHomeServices(userId: string | undefined) {

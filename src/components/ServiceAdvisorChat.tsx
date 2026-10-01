@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { MessageCircle, Send, Sparkles, X, Settings, Loader2, Bot, User, Wrench, Plus } from 'lucide-react';
+import { Send, X, Settings, Loader2, Bot, Wrench, Plus } from 'lucide-react';
 import { HomeService } from '../types';
 import { GEMINI_MODELS, GeminiModel } from '../services/geminiService';
 import { getServiceAdvice } from '../services/geminiService';
@@ -39,7 +39,6 @@ export function ServiceAdvisorChat({ services, onOpenChange }: ServiceAdvisorCha
   const [isLoading, setIsLoading] = React.useState(false);
   const [selectedModel, setSelectedModel] = React.useState<GeminiModel>(GEMINI_MODELS.FLASH_LITE);
   const [showModelSelector, setShowModelSelector] = React.useState(false);
-  const [showSuggestions, setShowSuggestions] = React.useState(false);
 
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
   const modelSelectorRef = React.useRef<HTMLDivElement>(null);
@@ -83,40 +82,6 @@ export function ServiceAdvisorChat({ services, onOpenChange }: ServiceAdvisorCha
     onOpenChange?.(open && !isMobile ? width : 0);
   };
 
-  // Generate context-aware suggestions based on service data
-  const getSuggestions = React.useMemo(() => {
-    const overdueServices = services.filter(s => new Date(s.next_service_due) < new Date());
-    const upcomingServices = services.filter(s => {
-      const dueDate = new Date(s.next_service_due);
-      const today = new Date();
-      const diffDays = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-      return diffDays > 0 && diffDays <= 30;
-    });
-
-    const suggestions: string[] = [];
-
-    if (messages.length <= 2) {
-      if (overdueServices.length > 0) {
-        suggestions.push("What services are overdue?");
-      }
-      if (upcomingServices.length > 0) {
-        suggestions.push("What services are due soon?");
-      }
-      suggestions.push(
-        "How can I reduce service costs?",
-        "Give me maintenance recommendations"
-      );
-    } else {
-      suggestions.push(
-        "What's my service health status?",
-        "How much will I spend next month?",
-        "Which services need priority?",
-        "Give me cost-saving tips"
-      );
-    }
-
-    return suggestions.slice(0, 4);
-  }, [services, messages.length]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -140,12 +105,6 @@ export function ServiceAdvisorChat({ services, onOpenChange }: ServiceAdvisorCha
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showModelSelector]);
 
-  // Show suggestions when chat is opened and empty
-  React.useEffect(() => {
-    if (isOpen && messages.length <= 1 && !input.trim()) {
-      setShowSuggestions(true);
-    }
-  }, [isOpen, messages.length, input]);
 
   const handleSend = async (customMessage?: string) => {
     const messageText = customMessage || input.trim();
@@ -161,7 +120,6 @@ export function ServiceAdvisorChat({ services, onOpenChange }: ServiceAdvisorCha
     setMessages((prev: Message[]) => [...prev, userMessage]);
     setInput('');
     setIsLoading(true);
-    setShowSuggestions(false);
 
     try {
       const response = await getServiceAdvice(

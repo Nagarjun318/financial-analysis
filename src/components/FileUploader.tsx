@@ -52,7 +52,7 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onFileUpload, isLoading, er
               <p className="text-brand-primary font-semibold">Drop the file here ...</p>
             ) : (
               <p className="text-light-text-secondary dark:text-dark-text-secondary">
-                Drag 'n' drop a file here, or click to select a file
+                Drag &apos;n&apos; drop a file here, or click to select a file
               </p>
             )}
              <p className="text-xs text-gray-500 dark:text-gray-400">Supported formats: .tsv, .txt</p>

@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
+import { client as supabase, isNeonConfigured as isSupabaseConfigured } from '../services/neonClient';
 import { Transaction } from '../types';
 
 // Raw row shape from database (assuming normalized lowercase columns)
@@ -40,33 +40,84 @@ export const TRANSACTIONS_QUERY_KEY = ['transactions'];
 
 const EMPTY_ARRAY: Transaction[] = [];
 
+/**
+ * Server-side page window for the transactions table (Phase 3).
+ * PostgREST `.range()` is inclusive on both ends, so page 0 with size 100
+ * fetches rows [0, 99].
+ */
+export function buildTransactionPageRange(page: number, pageSize: number): { from: number; to: number } {
+  const safePage = Math.max(0, Math.floor(page));
+  const safeSize = Math.max(1, Math.floor(pageSize));
+  const from = safePage * safeSize;
+  return { from, to: from + safeSize - 1 };
+}
+
+/**
+ * Paginated transaction fetch: one page via `.range()` plus the exact total
+ * count in a single round trip. Use for large table displays; the analytics
+ * path (`useTransactions`) still needs the full dataset until aggregation
+ * moves server-side.
+ */
+export function useTransactionsPage(
+  userId: string | undefined,
+  page: number,
+  pageSize: number
+) {
+  const { from, to } = buildTransactionPageRange(page, pageSize);
+  const pageQuery = useQuery({
+    queryKey: [...TRANSACTIONS_QUERY_KEY, 'page', userId, from, to],
+    enabled: Boolean(userId) && isSupabaseConfigured,
+    queryFn: async () => {
+      if (!userId || !isSupabaseConfigured) return { rows: [] as Transaction[], totalCount: 0 };
+      const { data, error, count } = await (supabase as any)
+        .from('transactions')
+        .select('*', { count: 'exact' })
+        .eq('user_id', userId)
+        .order('date', { ascending: false })
+        .range(from, to);
+      if (error) throw error;
+      return {
+        rows: ((data || []) as TransactionRow[]).map(mapRowToTransaction),
+        totalCount: typeof count === 'number' ? count : 0,
+      };
+    },
+  });
+
+  return {
+    rows: pageQuery.data?.rows ?? EMPTY_ARRAY,
+    totalCount: pageQuery.data?.totalCount ?? 0,
+    isLoading: pageQuery.isLoading,
+    isError: pageQuery.isError,
+    refetch: pageQuery.refetch,
+  };
+}
+
 export function useTransactions(userId: string | undefined) {
   const queryClient = useQueryClient();
 
-  // Normalize outgoing row payload to match DB schema when certain columns are capitalized (Amount, Category, Description).
+  // Normalize outgoing row payload to the Neon schema (lowercase columns).
+  // Legacy Supabase rows used capitalized keys (Amount, Category, Description);
+  // map those to lowercase so writes always match NEON_SCHEMA.sql.
   const normalizeWriteRow = (row: Partial<TransactionRow>): Partial<TransactionRow> => {
-    // If DB uses 'Amount' (capital A) and caller provided lowercase 'amount', shift the key.
-    if ('amount' in row && !('Amount' in row)) {
-      const copy: any = { ...row };
-      copy.Amount = copy.amount;
-      delete copy.amount;
-      row = copy;
+    const copy: any = { ...row };
+    if ('Amount' in copy && !('amount' in copy)) {
+      copy.amount = copy.Amount;
+      delete copy.Amount;
     }
-    // Category normalization
-    if ('category' in row && !('Category' in row)) {
-      const copy: any = { ...row };
-      copy.Category = copy.category;
-      delete copy.category;
-      row = copy;
+    if ('Category' in copy && !('category' in copy)) {
+      copy.category = copy.Category;
+      delete copy.Category;
     }
-    // Description normalization (if needed)
-    if ('description' in row && !('Description' in row)) {
-      const copy: any = { ...row };
-      copy.Description = copy.description;
-      delete copy.description;
-      row = copy;
+    if ('Description' in copy && !('description' in copy)) {
+      copy.description = copy.Description;
+      delete copy.Description;
     }
-    return row;
+    // Neon uses ai_category (lowercase); map legacy AI_Category.
+    if ('AI_Category' in copy && !('ai_category' in copy)) {
+      copy.ai_category = copy.AI_Category;
+      delete copy.AI_Category;
+    }
+    return copy;
   };
 
   const transactionsQuery = useQuery({

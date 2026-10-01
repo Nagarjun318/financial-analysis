@@ -153,20 +153,20 @@ export const getCategory = (description: string): string => {
  */
 export const processXlsData = async (file: File): Promise<Transaction[]> => {
     const data = await file.arrayBuffer();
-    const XLSX = (window as any).XLSX;
-    if (!XLSX) {
-        throw new Error("SheetJS library (xlsx.full.min.js) is not loaded.");
-    }
-    const workbook = XLSX.read(data);
+    // Dynamic import: `xlsx` (~300 KB) stays out of the initial bundle and
+    // loads only when the user actually uploads a statement.
+    const XLSX = await import('xlsx');
+    // cellDates is a read option: date cells become JS Date objects.
+    const workbook = XLSX.read(data, { cellDates: true });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
 
-    // DEFINITIVE FIX: Use `cellDates: true` to have SheetJS parse Excel dates into JS Date objects.
-    // This is far more robust than trying to parse date strings manually with regex.
+    // DEFINITIVE FIX: date cells were parsed into JS Date objects at read time
+    // (cellDates: true above). This is far more robust than trying to parse
+    // date strings manually with regex.
     const aoa: any[][] = XLSX.utils.sheet_to_json(worksheet, {
         header: 1,
         raw: false, // Ensures we get formatted strings for non-date values
-        cellDates: true, // Key change: Converts date cells to JS Date objects
     });
 
     if (aoa.length === 0) return [];

@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { MessageCircle, Send, Sparkles, X, Settings, Loader2, Bot, User, Target, Plus } from 'lucide-react';
+import { Send, X, Settings, Loader2, Bot, Plus } from 'lucide-react';
 import { Transaction } from '../types';
 import { GEMINI_MODELS, GeminiModel } from '../services/geminiService';
 import { getFinancialAdvice } from '../services/geminiService';
@@ -39,7 +39,6 @@ export function FinancialAdvisorChat({ transactions, onOpenChange }: FinancialAd
   const [isLoading, setIsLoading] = React.useState(false);
   const [selectedModel, setSelectedModel] = React.useState<GeminiModel>(GEMINI_MODELS.FLASH_LITE);
   const [showModelSelector, setShowModelSelector] = React.useState(false);
-  const [showSuggestions, setShowSuggestions] = React.useState(false);
 
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
   const modelSelectorRef = React.useRef<HTMLDivElement>(null);
@@ -83,52 +82,6 @@ export function FinancialAdvisorChat({ transactions, onOpenChange }: FinancialAd
     onOpenChange?.(open && !isMobile ? width : 0);
   };
 
-  // Generate context-aware suggestions based on transaction data
-  const getSuggestions = React.useMemo(() => {
-    const totalIncome = transactions.filter(t => t.type === 'credit').reduce((sum, t) => sum + Math.abs(t.amount), 0);
-    const totalExpenses = transactions.filter(t => t.type === 'debit').reduce((sum, t) => sum + Math.abs(t.amount), 0);
-    const savingsRate = totalIncome > 0 ? ((totalIncome - totalExpenses) / totalIncome) * 100 : 0;
-
-    // Get top expense categories
-    const categoryExpenses = transactions
-      .filter(t => t.type === 'debit')
-      .reduce((acc, t) => {
-        const cat = t.category || 'Other';
-        acc[cat] = (acc[cat] || 0) + Math.abs(t.amount);
-        return acc;
-      }, {} as Record<string, number>);
-
-    const topCategory = Object.entries(categoryExpenses)
-      .sort(([, a], [, b]) => b - a)[0];
-
-    const suggestions: string[] = [];
-
-    // Base suggestions
-    if (messages.length <= 2) {
-      suggestions.push(
-        "How can I increase my savings?",
-        "Analyze my spending patterns",
-        "What am I spending too much on?",
-        "Give me a financial health summary"
-      );
-    } else {
-      // Context-aware suggestions based on data
-      if (savingsRate < 20) {
-        suggestions.push("How can I save more money?");
-      }
-      if (topCategory) {
-        suggestions.push(`Why is my ${topCategory[0]} spending high?`);
-      }
-      suggestions.push(
-        "What should I do to improve my finances?",
-        "Give me tips to reduce expenses",
-        "Am I making any financial mistakes?",
-        "What are my biggest spending categories?"
-      );
-    }
-
-    return suggestions.slice(0, 4); // Return top 4 suggestions
-  }, [transactions, messages.length]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -152,12 +105,6 @@ export function FinancialAdvisorChat({ transactions, onOpenChange }: FinancialAd
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showModelSelector]);
 
-  // Show suggestions when chat is opened and empty
-  React.useEffect(() => {
-    if (isOpen && messages.length <= 1 && !input.trim()) {
-      setShowSuggestions(true);
-    }
-  }, [isOpen, messages.length, input]);
 
   const handleSend = async (customMessage?: string) => {
     const messageText = customMessage || input.trim();
@@ -173,7 +120,6 @@ export function FinancialAdvisorChat({ transactions, onOpenChange }: FinancialAd
     setMessages((prev: Message[]) => [...prev, userMessage]);
     setInput('');
     setIsLoading(true);
-    setShowSuggestions(false);
 
     try {
       const response = await getFinancialAdvice(

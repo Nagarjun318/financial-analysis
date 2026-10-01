@@ -2,6 +2,7 @@ import React from 'react';
 import { Transaction } from '../types';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, AreaChart, Area, ScatterChart, Scatter, ZAxis, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import { formatCurrency } from '../utils';
+import { paletteColor, SEMANTIC } from './charts/chartTheme.ts';
 
 interface DynamicChartProps {
     suggestion: {
@@ -21,18 +22,10 @@ export const DynamicChart: React.FC<DynamicChartProps> = ({ suggestion, transact
         const combined = `${chartType} ${title} ${description} `.toLowerCase();
 
         // Debug logging
-        console.log('🎨 Chart Generation Debug:');
-        console.log('Type:', suggestion.chartType);
-        console.log('Title:', suggestion.title);
-        console.log('Description:', suggestion.description);
-        console.log('Combined search string:', combined);
-
-        const COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4', '#f43f5e', '#84cc16', '#14b8a6', '#f97316'];
 
         // 1. HEATMAP variations - hour/day patterns
         if (combined.includes('heatmap') || combined.includes('hour') || combined.includes('day-of-week') || combined.includes('day of week')) {
             if (combined.includes('hour') || combined.includes('time of day') || combined.includes('hourly')) {
-                console.log('✅ Detected: Hour-of-day heatmap');
                 const hourlySpend: Record<string, number> = {};
                 for (let i = 0; i < 24; i++) hourlySpend[`${i}:00`] = 0;
 
@@ -42,10 +35,9 @@ export const DynamicChart: React.FC<DynamicChartProps> = ({ suggestion, transact
                         hourlySpend[`${hour}:00`] += Math.abs(t.amount);
                     }
                 });
-                return Object.entries(hourlySpend).map(([name, value], index) => ({ name, value, color: COLORS[index % COLORS.length] }));
+                return Object.entries(hourlySpend).map(([name, value], index) => ({ name, value, color: paletteColor(index) }));
             }
 
-            console.log('✅ Detected: Day-of-week heatmap');
             const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
             const daySpend: Record<string, number> = {};
             dayNames.forEach(d => daySpend[d] = 0);
@@ -56,7 +48,7 @@ export const DynamicChart: React.FC<DynamicChartProps> = ({ suggestion, transact
                     daySpend[day] += Math.abs(t.amount);
                 }
             });
-            return Object.entries(daySpend).map(([name, value], index) => ({ name, value, color: COLORS[index % COLORS.length] }));
+            return Object.entries(daySpend).map(([name, value], index) => ({ name, value, color: paletteColor(index) }));
         }
 
         // 2. SCATTER / BUBBLE CHART - Multiple types
@@ -64,7 +56,6 @@ export const DynamicChart: React.FC<DynamicChartProps> = ({ suggestion, transact
 
             // 2a. TEMPORAL DENSITY - Time between transactions
             if (combined.includes('temporal') || combined.includes('density') || combined.includes('time between')) {
-                console.log('✅ Detected: Scatter - Transaction Value vs Temporal Density');
 
                 // Sort transactions by date
                 const sortedTransactions = [...transactions]
@@ -117,7 +108,6 @@ export const DynamicChart: React.FC<DynamicChartProps> = ({ suggestion, transact
             }
 
             // 2b. FREQUENCY vs VALUE - Category analysis
-            console.log('✅ Detected: Scatter/Bubble chart - Frequency vs Value by Category');
 
             const categoryStats = new Map<string, { count: number; totalAmount: number }>();
 
@@ -143,7 +133,6 @@ export const DynamicChart: React.FC<DynamicChartProps> = ({ suggestion, transact
 
         // 3. WEEKDAY vs WEEKEND comparison
         if (combined.includes('weekday') || combined.includes('weekend') || combined.includes('week day')) {
-            console.log('✅ Detected: Weekday vs Weekend');
             const weekdayTotal = transactions.filter(t => {
                 const day = new Date(t.date).getDay();
                 return t.type === 'debit' && day >= 1 && day <= 5;
@@ -155,14 +144,13 @@ export const DynamicChart: React.FC<DynamicChartProps> = ({ suggestion, transact
             }).reduce((sum, t) => sum + Math.abs(t.amount), 0);
 
             return [
-                { name: 'Weekday', value: weekdayTotal, color: COLORS[0] },
-                { name: 'Weekend', value: weekendTotal, color: COLORS[1] }
+                { name: 'Weekday', value: weekdayTotal, color: paletteColor(0) },
+                { name: 'Weekend', value: weekendTotal, color: paletteColor(1) }
             ];
         }
 
         // 4. MERCHANTS / VENDORS
         if (combined.includes('merchant') || combined.includes('vendor') || combined.includes('top spend')) {
-            console.log('✅ Detected: Merchant analysis');
             const merchantMap = new Map<string, number>();
             transactions.forEach(t => {
                 if (t.type === 'debit') {
@@ -174,13 +162,12 @@ export const DynamicChart: React.FC<DynamicChartProps> = ({ suggestion, transact
             return Array.from(merchantMap.entries())
                 .sort((a, b) => b[1] - a[1])
                 .slice(0, 12)
-                .map(([name, value], index) => ({ name, value, color: COLORS[index % COLORS.length] }));
+                .map(([name, value], index) => ({ name, value, color: paletteColor(index) }));
         }
 
         // 5. MONTHLY / TIME SERIES / TRENDS
         if (combined.includes('monthly') || combined.includes('cumulative') || combined.includes('over time') ||
             combined.includes('trend') || chartType.includes('area') || chartType.includes('line')) {
-            console.log('✅ Detected: Time series/Monthly trend');
             const monthlyMap = new Map<string, number>();
             transactions.forEach(t => {
                 if (t.type === 'debit' && t.date) {
@@ -191,14 +178,13 @@ export const DynamicChart: React.FC<DynamicChartProps> = ({ suggestion, transact
             });
 
             return Array.from(monthlyMap.entries())
-                .map(([name, value], index) => ({ name, value, color: COLORS[index % COLORS.length] }))
+                .map(([name, value], index) => ({ name, value, color: paletteColor(index) }))
                 .slice(-12); // Last 12 months
         }
 
         // 6. CATEGORY DISTRIBUTION (Pie/Donut/Treemap)
         if (chartType.includes('pie') || chartType.includes('donut') || chartType.includes('treemap') ||
             combined.includes('category') || combined.includes('distribution') || combined.includes('breakdown')) {
-            console.log('✅ Detected: Category distribution');
             const categoryMap = new Map<string, number>();
             transactions.forEach(t => {
                 if (t.type === 'debit') {
@@ -210,7 +196,7 @@ export const DynamicChart: React.FC<DynamicChartProps> = ({ suggestion, transact
             return Array.from(categoryMap.entries())
                 .sort((a, b) => b[1] - a[1])
                 .slice(0, 8)
-                .map(([name, value], index) => ({ name, value, color: COLORS[index % COLORS.length] }));
+                .map(([name, value], index) => ({ name, value, color: paletteColor(index) }));
         }
 
         // 7. DISTRIBUTION / BOX PLOT data - This section was removed as per the instruction.
@@ -218,18 +204,16 @@ export const DynamicChart: React.FC<DynamicChartProps> = ({ suggestion, transact
         // 7. INCOME vs EXPENSES (Waterfall/Funnel/Cash Flow)
         if (combined.includes('waterfall') || combined.includes('funnel') || combined.includes('income') ||
             combined.includes('cash flow') || combined.includes('savings')) {
-            console.log('✅ Detected: Income vs Expenses flow');
             const income = transactions.filter(t => t.type === 'credit').reduce((s, t) => s + t.amount, 0);
             const expense = transactions.filter(t => t.type === 'debit').reduce((s, t) => s + Math.abs(t.amount), 0);
             return [
-                { name: 'Income', value: income, color: COLORS[0] },
-                { name: 'Expenses', value: expense, color: COLORS[1] },
-                { name: 'Net Savings', value: Math.max(0, income - expense), color: COLORS[2] }
+                { name: 'Income', value: income, color: SEMANTIC.income },
+                { name: 'Expenses', value: expense, color: SEMANTIC.expense },
+                { name: 'Net Savings', value: Math.max(0, income - expense), color: SEMANTIC.savings }
             ];
         }
 
         // DEFAULT: Top categories by spending
-        console.log('⚠️ Using default: Top categories');
         const categoryMap = new Map<string, number>();
         transactions.forEach(t => {
             if (t.type === 'debit') {
@@ -241,10 +225,10 @@ export const DynamicChart: React.FC<DynamicChartProps> = ({ suggestion, transact
         return Array.from(categoryMap.entries())
             .sort((a, b) => b[1] - a[1])
             .slice(0, 10)
-            .map(([name, value], index) => ({ name, value, color: COLORS[index % COLORS.length] }));
+            .map(([name, value], index) => ({ name, value, color: paletteColor(index) }));
     }, [suggestion, transactions]);
 
-    const COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4', '#f43f5e', '#84cc16', '#14b8a6', '#f97316'];
+
     const LegendAny = Legend as any;
 
     const renderChart = () => {
@@ -270,7 +254,7 @@ export const DynamicChart: React.FC<DynamicChartProps> = ({ suggestion, transact
                             dataKey="value"
                         >
                             {chartData.map((entry: any, index: number) => (
-                                <Cell key={`cell - ${index} `} fill={COLORS[index % COLORS.length]} />
+                                <Cell key={`cell - ${index} `} fill={paletteColor(index)} />
                             ))}
                         </Pie>
                         <Tooltip formatter={(value: number) => formatCurrency(value)} />
@@ -282,7 +266,6 @@ export const DynamicChart: React.FC<DynamicChartProps> = ({ suggestion, transact
 
         // RADAR CHART
         if (chartType.includes('radar') || chartType.includes('spider')) {
-            console.log('✅ Detected: Radar/Spider chart');
             const PolarAngleAxisAny = PolarAngleAxis as any;
             const PolarRadiusAxisAny = PolarRadiusAxis as any;
             const RadarAny = Radar as any;
@@ -303,7 +286,6 @@ export const DynamicChart: React.FC<DynamicChartProps> = ({ suggestion, transact
 
         // BUBBLE CHART - Scatter plot with varying bubble sizes
         if (chartType.includes('bubble')) {
-            console.log('✅ Rendering: Bubble Chart');
             const ScatterAny = Scatter as any;
 
             // For bubble charts, we need numeric x/y coordinates and size (z)
@@ -345,7 +327,7 @@ export const DynamicChart: React.FC<DynamicChartProps> = ({ suggestion, transact
                         <Tooltip
                             cursor={{ strokeDasharray: '3 3' }}
                             contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', borderRadius: '8px', border: 'none' }}
-                            formatter={(value: any, name: string, props: any) => {
+                            formatter={(value: any, name: string) => {
                                 if (name === 'z') return [`Size: ${Math.round(value)}`, 'Size'];
                                 if (name === 'y') return [formatCurrency(value), yAxisLabel];
                                 return [value, name];
@@ -354,7 +336,7 @@ export const DynamicChart: React.FC<DynamicChartProps> = ({ suggestion, transact
                         <LegendAny verticalAlign="top" height={36} />
                         <ScatterAny name="Categories" dataKey="y" fill="#6366f1" shape="circle">
                             {bubbleData.map((entry: any, index: number) => (
-                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                <Cell key={`cell-${index}`} fill={paletteColor(index)} />
                             ))}
                         </ScatterAny>
                     </ScatterChart>
@@ -364,7 +346,6 @@ export const DynamicChart: React.FC<DynamicChartProps> = ({ suggestion, transact
 
         // SCATTER CHART - Actual scatter plot with dots
         if (chartType.includes('scatter')) {
-            console.log('✅ Rendering: Scatter Chart');
             const ScatterAny = Scatter as any;
 
             // Determine if this is a temporal chart
@@ -499,7 +480,7 @@ export const DynamicChart: React.FC<DynamicChartProps> = ({ suggestion, transact
                     <LegendAny verticalAlign="top" height={36} />
                     <Bar dataKey="value" radius={[8, 8, 0, 0]} name="Spending">
                         {chartData.map((entry: any, index: number) => (
-                            <Cell key={`cell - ${index} `} fill={COLORS[index % COLORS.length]} />
+                            <Cell key={`cell - ${index} `} fill={paletteColor(index)} />
                         ))}
                     </Bar>
                 </BarChart>
