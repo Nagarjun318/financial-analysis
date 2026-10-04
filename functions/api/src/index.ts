@@ -13,7 +13,7 @@ import { verifyRequest } from './auth.ts';
 import { corsHeaders, corsPatterns } from './cors.ts';
 import { checkRateLimit, limitFor, type EndpointClass } from './ratelimit.ts';
 import { TtlCache } from './cache.ts';
-import { completePrompt, parseCompleteRequest } from './ai.ts';
+import { completePrompt, parseCompleteRequest, RateLimitError } from './ai.ts';
 import { fetchHistoricalPrice, fetchRealTimePrice } from './market.ts';
 import {
   currentConditions,
@@ -127,6 +127,15 @@ app.post('/api/ai/complete', async (c) => {
     const result = await completePrompt(parsed.model, parsed.prompt, env);
     return c.json({ text: result.text, via: result.via, model: parsed.model });
   } catch (err) {
+    // Upstream (Google/gateway) throttling — forward 429 + wait hint so the
+    // client backs off instead of burning quota on instant retries.
+    if (err instanceof RateLimitError) {
+      console.warn('[api/ai] provider rate limit, retry after', err.retryAfterSeconds, 's');
+      return c.json(
+        { error: 'AI provider is busy. Try again shortly.', retryAfter: err.retryAfterSeconds },
+        429
+      );
+    }
     console.error('[api/ai] completion failed:', err);
     return c.json({ error: 'AI completion failed. Try again later.' }, 502);
   }

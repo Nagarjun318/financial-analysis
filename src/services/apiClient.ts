@@ -57,10 +57,13 @@ export async function getAccessToken(): Promise<string | null> {
 
 export class FunctionApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  /** Seconds to wait before retrying (provider 429s only; absent otherwise). */
+  retryAfter?: number;
+  constructor(status: number, message: string, retryAfter?: number) {
     super(message);
     this.name = 'FunctionApiError';
     this.status = status;
+    this.retryAfter = retryAfter;
   }
 }
 
@@ -99,10 +102,11 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
     // non-JSON error body
   }
   if (!res.ok) {
-    const message =
-      (data as { error?: unknown } | null)?.error ??
-      `Function request failed (${res.status}).`;
-    throw new FunctionApiError(res.status, String(message));
+    const body = (data as { error?: unknown; retryAfter?: unknown } | null) ?? null;
+    const message = body?.error ?? `Function request failed (${res.status}).`;
+    const retryAfter =
+      typeof body?.retryAfter === 'number' && body.retryAfter > 0 ? body.retryAfter : undefined;
+    throw new FunctionApiError(res.status, String(message), retryAfter);
   }
   return data as T;
 }

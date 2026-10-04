@@ -1,4 +1,4 @@
-import { callGeminiAPI, GeminiModel, GEMINI_MODELS } from './geminiService';
+import { callGeminiAPI, GeminiModel, DEFAULT_GEMINI_MODEL } from './geminiService';
 import { apiFetch, isFunctionConfigured } from './apiClient.ts';
 
 export interface WeatherData {
@@ -274,7 +274,7 @@ function mapGoogleWeatherCondition(code: string): string {
  */
 export async function generateWeatherGrocerySuggestions(
   weatherData: WeatherData,
-  model: GeminiModel = GEMINI_MODELS.FLASH_LITE
+  model: GeminiModel = DEFAULT_GEMINI_MODEL
 ): Promise<WeatherGrocerySuggestion[]> {
   try {
     const prompt = `Based on the following weather data, provide smart grocery shopping suggestions for a household in India.

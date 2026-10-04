@@ -20,10 +20,14 @@ export const GEMINI_MODELS = {
 	FLASH_2_0: 'gemini-2.0-flash',
 	FLASH_LITE: 'gemini-flash-lite-latest',
 	FLASH_2_5: 'gemini-2.5-flash',
+	FLASH_3_5_LITE: 'gemini-3.5-flash-lite',
 	GEMMA_3: 'gemma-3-27b-it',
 } as const;
 
 export type GeminiModel = typeof GEMINI_MODELS[keyof typeof GEMINI_MODELS];
+
+/** App-wide default model. Change here to move every default at once. */
+export const DEFAULT_GEMINI_MODEL: GeminiModel = GEMINI_MODELS.FLASH_3_5_LITE;
 
 interface APIResponse {
 	text: string;
@@ -55,10 +59,19 @@ async function retryWithBackoff<T>(
 					throw error;
 				}
 			}
-			// Never hammer a rate-limited or auth-gated Function endpoint.
-			if (error instanceof FunctionApiError && (error.status === 429 || error.status === 401)) {
-				throw error;
+		// Provider 429s carry a wait hint — honor it and retry. Our own
+		// hourly limiter (429 without retryAfter) and auth 401s throw now.
+		if (error instanceof FunctionApiError && error.status === 429 && error.retryAfter !== undefined) {
+			if (attempt < maxRetries - 1) {
+				const waitMs = Math.min(error.retryAfter, 120) * 1000;
+				await new Promise(resolve => setTimeout(resolve, waitMs));
+				continue;
 			}
+			throw error;
+		}
+		if (error instanceof FunctionApiError && (error.status === 429 || error.status === 401)) {
+			throw error;
+		}
 			
 			if (attempt < maxRetries - 1) {
 				const delay = initialDelay * Math.pow(2, attempt);
@@ -216,7 +229,7 @@ async function completeDirect(prompt: string, model: GeminiModel): Promise<APIRe
  * Call the AI backend: Function proxy when configured (production — keys stay
  * server-side), direct REST only as a local-dev fallback.
  */
-export async function callGeminiAPI(prompt: string, model: GeminiModel = GEMINI_MODELS.PRO_LATEST): Promise<APIResponse> {
+export async function callGeminiAPI(prompt: string, model: GeminiModel = DEFAULT_GEMINI_MODEL): Promise<APIResponse> {
 	const cached = readGeminiCache(model, prompt);
 	if (cached) return cached;
 	const result = isFunctionConfigured()
@@ -270,7 +283,7 @@ export interface SearchResult {
 export async function searchTransactionsWithAI(
 	query: string,
 	transactions: Transaction[],
-	model: GeminiModel = GEMINI_MODELS.PRO_LATEST
+	model: GeminiModel = DEFAULT_GEMINI_MODEL
 ): Promise<SearchResult> {
 	if (!transactions || transactions.length === 0) {
 		return { transactions: [], usedFallback: false };
@@ -442,7 +455,7 @@ export async function searchTransactionsWithAI(
  */
 export async function generateAIForecast(
 	transactions: Transaction[],
-	model: GeminiModel = GEMINI_MODELS.PRO_LATEST
+	model: GeminiModel = DEFAULT_GEMINI_MODEL
 ): Promise<{
 	month: string;
 	projectedIncome: number;
@@ -663,20 +676,44 @@ export async function predictTransactionCategory(
 	description: string,
 	amount: number,
 	existingCategories: string[],
-	model: GeminiModel = GEMINI_MODELS.FLASH_2_0
+	model: GeminiModel = DEFAULT_GEMINI_MODEL
 ): Promise<string> {
 	if (!description || description.trim().length === 0) {
 		return 'Uncategorized';
 	}
 
 	// Use the batch function for consistency
-	// Pass a dummy ID since it's not needed for single prediction
-	const result = await predictTransactionCategoriesBatch(
-		[{ id: 0, description, amount }],
-		model
-	);
+	// Pass a dummy ID since it's not needed for single prediction.
+	// Single predictions keep the old never-throw contract.
+	try {
+		const result = await predictTransactionCategoriesBatch(
+			[{ id: 0, description, amount }],
+			model
+		);
+		return result[0]?.ai_category || 'Uncategorized';
+	} catch (error) {
+		if (error instanceof BatchAbortedError && error.partialResults.length > 0) {
+			return error.partialResults[0]?.ai_category || 'Uncategorized';
+		}
+		return 'Others';
+	}
+}
 
-	return result[0]?.ai_category || 'Uncategorized';
+/**
+ * Thrown when a bulk prediction run aborts on a failed batch. Later batches
+ * are NOT attempted; `partialResults` holds every good prediction made
+ * before the failure (static-rule + completed AI batches) so callers can
+ * still save progress.
+ */
+export class BatchAbortedError extends Error {
+  partialResults: Array<{ id: number; ai_category: string }>;
+  failedBatch: number;
+  constructor(message: string, partialResults: Array<{ id: number; ai_category: string }>, failedBatch: number) {
+    super(message);
+    this.name = 'BatchAbortedError';
+    this.partialResults = partialResults;
+    this.failedBatch = failedBatch;
+  }
 }
 
 /**
@@ -684,10 +721,11 @@ export async function predictTransactionCategory(
  * More efficient than individual predictions
  * Uses pattern matching based on description keywords
  * Processes in batches of 5 to avoid API limits
+ * Aborts (throws BatchAbortedError) on the first failed batch.
  */
 export async function predictTransactionCategoriesBatch(
 	transactions: Array<{ id?: number; description: string; amount: number }>,
-	model: GeminiModel = GEMINI_MODELS.PRO_LATEST
+	model: GeminiModel = DEFAULT_GEMINI_MODEL
 ): Promise<Array<{ id: number; ai_category: string }>> {
 	if (transactions.length === 0) return [];
 
@@ -714,6 +752,9 @@ export async function predictTransactionCategoriesBatch(
 
 	// Process in batches of 10 to avoid overwhelming the API
 	const BATCH_SIZE = 10;
+	// Google free-tier allows ~15 RPM per model — pace batches well under it
+	// (≈12/min) so bulk runs don't trip provider throttling.
+	const BATCH_DELAY_MS = 5000;
 	const aiResults: Array<{ id: number; ai_category: string }> = [];
 	
 	
@@ -726,15 +767,19 @@ export async function predictTransactionCategoriesBatch(
 			const batchResults = await processSingleBatch(batch, model);
 			aiResults.push(...batchResults);
 		} catch (error) {
-			console.error(`Batch ${batchNumber} failed:`, error);
-			// On error, add fallback categories for this batch
-			const fallbackBatch = batch.map(t => ({ id: t.id, ai_category: 'Others' }));
-			aiResults.push(...fallbackBatch);
+			console.error(`Batch ${batchNumber} failed, stopping:`, error);
+			// Fail fast: don't burn quota on batches that will fail the same
+			// way. Callers save partialResults (static + completed batches).
+			throw new BatchAbortedError(
+				`Batch ${batchNumber} failed: ${error instanceof Error ? error.message : String(error)}`,
+				[...results, ...aiResults],
+				batchNumber
+			);
 		}
 		
-		// Small delay between batches to avoid rate limits
+		// Pace batches under Google's per-minute quota (see BATCH_DELAY_MS)
 		if (i + BATCH_SIZE < transactionsForAI.length) {
-			await new Promise(resolve => setTimeout(resolve, 500));
+			await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
 		}
 	}
 	
@@ -861,7 +906,7 @@ export async function getFinancialAdvice(
 	userQuery: string,
 	transactions: Array<{ date: string; description: string; amount: number; category: string; type: 'debit' | 'credit'; ai_category?: string | null }>,
 	conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }>,
-	model: GeminiModel = GEMINI_MODELS.FLASH_LITE
+	model: GeminiModel = DEFAULT_GEMINI_MODEL
 ): Promise<string> {
 	// Calculate financial summary
 	const totalIncome = transactions.filter(t => t.type === 'credit').reduce((sum, t) => sum + Math.abs(t.amount), 0);
@@ -986,7 +1031,7 @@ export async function getAnalyticsAdvice(
 		periodComparison: string;
 	},
 	conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }>,
-	model: GeminiModel = GEMINI_MODELS.FLASH_LITE
+	model: GeminiModel = DEFAULT_GEMINI_MODEL
 ): Promise<string> {
 	const conversationContext = conversationHistory
 		.slice(-6)
@@ -1093,7 +1138,7 @@ function extractFirstJSONObject(text: string): string | null {
 export async function suggestNewChart(
 	transactions: Transaction[],
 	previousSuggestions: string[] = [],
-	model: GeminiModel = GEMINI_MODELS.FLASH_LITE
+	model: GeminiModel = DEFAULT_GEMINI_MODEL
 ): Promise<{
 	chartType: string;
 	title: string;
@@ -1225,7 +1270,7 @@ export async function suggestNewChart(
  */
 export async function generateDashboardInsights(
 	transactions: Transaction[],
-	model: GeminiModel = GEMINI_MODELS.FLASH_LITE
+	model: GeminiModel = DEFAULT_GEMINI_MODEL
 ): Promise<string[]> {
 	// Quick summary for context
 	const totalSpend = transactions.filter(t => t.type === 'debit').reduce((sum, t) => sum + Math.abs(t.amount), 0);
@@ -1259,7 +1304,7 @@ export async function getKitchenAssistance(
 	userQuery: string,
 	inventory: Array<{ item_name: string; current_stock: number; unit: string; category: string }>,
 	shoppingList: Array<{ item_name: string; quantity: number; unit: string }>,
-	model: GeminiModel = GEMINI_MODELS.FLASH_LITE
+	model: GeminiModel = DEFAULT_GEMINI_MODEL
 ): Promise<KitchenAssistanceResult> {
 	const inventoryList = inventory.map(i => `- ${i.item_name} (${i.current_stock} ${i.unit}) [${i.category}]`).join('\n');
 	const shoppingListItems = shoppingList.map(i => `- ${i.item_name} (${i.quantity} ${i.unit})`).join('\n');
@@ -1325,7 +1370,7 @@ export async function getKitchenAssistance(
 export async function suggestGroceryCategory(
 	itemName: string,
 	availableCategories: string[],
-	model: GeminiModel = GEMINI_MODELS.FLASH_LITE
+	model: GeminiModel = DEFAULT_GEMINI_MODEL
 ): Promise<string> {
 	if (!itemName || itemName.trim().length === 0) {
 		return 'General';
@@ -1429,7 +1474,7 @@ export interface GroceryItemSuggestion {
 export async function suggestGroceryItemDetails(
 	itemName: string,
 	availableCategories: string[],
-	model: GeminiModel = GEMINI_MODELS.FLASH_LITE
+	model: GeminiModel = DEFAULT_GEMINI_MODEL
 ): Promise<GroceryItemSuggestion> {
 	if (!itemName || itemName.trim().length === 0) {
 		return {
@@ -1541,7 +1586,7 @@ export interface InvestmentSuggestion {
 export async function suggestInvestmentDetails(
 	assetName: string,
 	existingInvestments: Array<{ name: string; type: string; investedAmount?: number; currentValue?: number }>,
-	model: GeminiModel = GEMINI_MODELS.FLASH_LITE
+	model: GeminiModel = DEFAULT_GEMINI_MODEL
 ): Promise<InvestmentSuggestion> {
 	if (!assetName || assetName.trim().length === 0) {
 		return {
@@ -1656,7 +1701,7 @@ export async function getServiceAdvice(
 	userQuery: string,
 	services: Array<{ service_name: string; service_type: string; last_service_date: string; next_service_due: string; cost?: number; service_provider?: string; notes?: string }>,
 	conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }>,
-	model: GeminiModel = GEMINI_MODELS.FLASH_LITE
+	model: GeminiModel = DEFAULT_GEMINI_MODEL
 ): Promise<string> {
 	const totalCost = services.reduce((sum, s) => sum + (s.cost || 0), 0);
 	const overdueServices = services.filter(s => new Date(s.next_service_due) < new Date());
@@ -1728,7 +1773,7 @@ export async function getServiceAdvice(
  */
 export async function generateServiceInsights(
 	services: Array<{ service_name: string; service_type: string; last_service_date: string; next_service_due: string; cost?: number; service_provider?: string }>,
-	model: GeminiModel = GEMINI_MODELS.FLASH_LITE
+	model: GeminiModel = DEFAULT_GEMINI_MODEL
 ): Promise<{
 	overallHealth: number;
 	costOptimization: string[];
@@ -1802,7 +1847,7 @@ export async function suggestServiceDetails(
 	serviceType: string,
 	serviceName: string,
 	existingServices: Array<{ service_name: string; service_type: string; service_provider?: string; cost?: number }>,
-	model: GeminiModel = GEMINI_MODELS.FLASH_LITE
+	model: GeminiModel = DEFAULT_GEMINI_MODEL
 ): Promise<{
 	suggestedProvider: string;
 	suggestedCost: number;
@@ -1867,7 +1912,7 @@ export async function detectServiceTypeAndSuggest(
 	existingServices: HomeService[],
 	existingServiceTypes: string[],
 	lastServiceDate?: string,
-	model: GeminiModel = GEMINI_MODELS.FLASH_LITE
+	model: GeminiModel = DEFAULT_GEMINI_MODEL
 ): Promise<{
 	detectedServiceType: string;
 	suggestedProvider: string;
@@ -1980,7 +2025,7 @@ export async function suggestCategoryBudget(
 	category: string,
 	transactions: Array<{ date: string; amount: number; category: string; type: 'debit' | 'credit' }>,
 	selectedYear: string,
-	model: GeminiModel = GEMINI_MODELS.FLASH_LITE
+	model: GeminiModel = DEFAULT_GEMINI_MODEL
 ): Promise<{
 	suggestedBudget: number;
 	reasoning: string;

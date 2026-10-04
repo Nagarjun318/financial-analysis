@@ -1,7 +1,7 @@
 import React from 'react';
 import { FinancialGoal } from '../types';
 import { analyzeGoal, GoalInsight } from '../services/netWorthAI';
-import { GEMINI_MODELS, GeminiModel } from '../services/geminiService';
+import { GEMINI_MODELS, DEFAULT_GEMINI_MODEL } from '../services/geminiService';
 import { Loader2, Target, TrendingUp, AlertCircle, CheckCircle2, RefreshCw, Settings } from 'lucide-react';
 
 interface Props {
@@ -12,7 +12,7 @@ export const AIGoalAdvisor: React.FC<Props> = ({ goal }) => {
     const [insight, setInsight] = React.useState(null as GoalInsight | null);
     const [isLoading, setIsLoading] = React.useState(false);
     const [error, setError] = React.useState(false);
-    const [selectedModel, setSelectedModel] = React.useState(GEMINI_MODELS.FLASH_LATEST as GeminiModel);
+    const [selectedModel, setSelectedModel] = React.useState(DEFAULT_GEMINI_MODEL);
     const [showModelSelector, setShowModelSelector] = React.useState(false);
 
     const fetchInsight = React.useCallback(async (force = false) => {

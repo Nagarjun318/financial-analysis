@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Settings, Sparkles } from 'lucide-react';
 import { Modal, Button } from './ui';
 import type { Investment } from '../hooks/useInvestments.ts';
-import { suggestInvestmentDetails, GEMINI_MODELS, type GeminiModel } from '../services/geminiService';
+import { suggestInvestmentDetails, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, type GeminiModel } from '../services/geminiService';
 import { extractSymbol } from '../services/marketDataService';
 
 export const INVESTMENT_TYPES = ['Stock', 'Mutual Fund', 'Crypto', 'Gold', 'Real Estate', 'Bond', 'ETF', 'Other'];
@@ -28,6 +28,7 @@ export function getModelDisplayName(model: GeminiModel): string {
     case GEMINI_MODELS.FLASH_LATEST: return 'Flash';
     case GEMINI_MODELS.FLASH_2_0: return 'Flash 2.0';
     case GEMINI_MODELS.FLASH_LITE: return 'Flash Lite';
+    case GEMINI_MODELS.FLASH_3_5_LITE: return '3.5 Flash-Lite';
     case GEMINI_MODELS.GEMMA_3: return 'Gemma 3';
     default: return 'Flash Lite';
   }
@@ -56,7 +57,7 @@ const InvestmentFormModal: React.FC<InvestmentFormModalProps> = ({
 }) => {
   const [formData, setFormData] = useState<InvestmentFormData>(initial);
   const [isSuggestingDetails, setIsSuggestingDetails] = useState(false);
-  const [selectedModel, setSelectedModel] = useState<GeminiModel>(GEMINI_MODELS.FLASH_LITE);
+  const [selectedModel, setSelectedModel] = useState<GeminiModel>(DEFAULT_GEMINI_MODEL);
   const [showModelSelector, setShowModelSelector] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const modelSelectorRef = useRef<HTMLDivElement>(null);

@@ -2,7 +2,7 @@ import React from 'react';
 import { Sparkles } from 'lucide-react';
 import { Transaction } from '../types.ts';
 import { formatCurrency, formatDisplayDate } from '../utils.ts';
-import { predictTransactionCategoriesBatch } from '../services/geminiService.ts';
+import { predictTransactionCategoriesBatch, BatchAbortedError } from '../services/geminiService.ts';
 import { showToast } from '../utils/toast';
 import { Modal, Button } from './ui';
 
@@ -60,10 +60,20 @@ const StagingModal: React.FC<StagingModalProps> = ({
       onTransactionsUpdate(updatedTransactions);
     } catch (error) {
       console.error('Failed to predict categories:', error);
-      
-      // Show user-friendly error message
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      showToast(`AI category prediction failed: ${errorMessage}. Transactions kept their current categories.`, 'error');
+
+      // A batch failure stops later batches — still apply what succeeded.
+      if (error instanceof BatchAbortedError && error.partialResults.length > 0) {
+        const byId = new Map(error.partialResults.map(p => [p.id, p.ai_category]));
+        onTransactionsUpdate(transactions.map((t, idx) => {
+          const ai_category = byId.get(idx + 1);
+          return ai_category ? { ...t, ai_category } : t;
+        }));
+        showToast(`Prediction stopped — ${error.message}. Applied ${error.partialResults.length} earlier prediction(s); the rest kept their categories.`, 'error');
+      } else {
+        // Show user-friendly error message
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+        showToast(`AI category prediction failed: ${errorMessage}. Transactions kept their current categories.`, 'error');
+      }
     } finally {
       setIsPredicting(false);
     }

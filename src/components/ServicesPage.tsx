@@ -5,7 +5,7 @@ import { HomeService } from '../types';
 import { ServiceAdvisorChat } from './ServiceAdvisorChat';
 import { ServiceInsightsDashboard } from './ServiceInsightsDashboard';
 import { ServiceHistoryModal } from './ServiceHistoryModal';
-import { detectServiceTypeAndSuggest, GEMINI_MODELS, GeminiModel } from '../services/geminiService';
+import { detectServiceTypeAndSuggest, GEMINI_MODELS, GeminiModel, DEFAULT_GEMINI_MODEL } from '../services/geminiService';
 import { showToast } from '../utils/toast';
 import { EmptyState } from './ui';
 
@@ -20,7 +20,7 @@ const ServicesPage: React.FC<ServicesPageProps> = ({ userId: propUserId }) => {
   const [selectedServiceType, setSelectedServiceType] = React.useState(null as string | null);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = React.useState(false);
   const [historyModalService, setHistoryModalService] = React.useState<{ id: number; name: string } | null>(null);
-  const [selectedModel, setSelectedModel] = React.useState<GeminiModel>(GEMINI_MODELS.FLASH_LITE);
+  const [selectedModel, setSelectedModel] = React.useState<GeminiModel>(DEFAULT_GEMINI_MODEL);
   const [showModelSelector, setShowModelSelector] = React.useState(false);
 
   const modelSelectorRef = React.useRef<HTMLDivElement>(null);
@@ -225,6 +225,7 @@ const ServicesPage: React.FC<ServicesPageProps> = ({ userId: propUserId }) => {
       case GEMINI_MODELS.FLASH_LATEST: return 'Flash';
       case GEMINI_MODELS.FLASH_2_0: return 'Flash 2.0';
       case GEMINI_MODELS.FLASH_LITE: return 'Flash Lite';
+      case GEMINI_MODELS.FLASH_3_5_LITE: return '3.5 Flash-Lite';
       case GEMINI_MODELS.GEMMA_3: return 'Gemma 3';
       default: return 'Flash Lite';
     }

@@ -1,7 +1,7 @@
 import React from 'react';
 const { useState, useEffect, useRef } = React;
 import { Plus, Trash2, ShoppingCart, Loader2, AlertTriangle, Minus, ChevronDown, ChevronRight, Check, Edit2, X, Sparkles, Bot, Settings } from 'lucide-react';
-import { suggestGroceryItemDetails, GEMINI_MODELS, GeminiModel } from '../services/geminiService';
+import { suggestGroceryItemDetails, GEMINI_MODELS, GeminiModel, DEFAULT_GEMINI_MODEL } from '../services/geminiService';
 import { formatCurrency } from '../utils';
 import { getLocationName } from '../services/weatherService.ts';
 import { showToast } from '../utils/toast';
@@ -44,7 +44,7 @@ const GroceriesPage: React.FC<{ userId?: string; onWeatherUpdate?: (condition: s
 
     const [expandedCategories, setExpandedCategories] = useState(new Set(BASE_CATEGORIES));
     const [isSuggestingDetails, setIsSuggestingDetails] = useState(false);
-    const [selectedModel, setSelectedModel] = useState<GeminiModel>(GEMINI_MODELS.FLASH_LITE);
+    const [selectedModel, setSelectedModel] = useState<GeminiModel>(DEFAULT_GEMINI_MODEL);
     const [showModelSelector, setShowModelSelector] = useState(false);
 
     const modelSelectorRef = useRef<HTMLDivElement>(null);
@@ -155,6 +155,7 @@ const GroceriesPage: React.FC<{ userId?: string; onWeatherUpdate?: (condition: s
             case GEMINI_MODELS.FLASH_LATEST: return 'Flash';
             case GEMINI_MODELS.FLASH_2_0: return 'Flash 2.0';
             case GEMINI_MODELS.FLASH_LITE: return 'Flash Lite';
+            case GEMINI_MODELS.FLASH_3_5_LITE: return '3.5 Flash-Lite';
             case GEMINI_MODELS.GEMMA_3: return 'Gemma 3';
             default: return 'Flash Lite';
         }

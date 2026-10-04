@@ -1,7 +1,7 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { Send, X, Settings, Loader2, Bot, ShoppingCart, Plus, Utensils } from 'lucide-react';
-import { GEMINI_MODELS, GeminiModel } from '../services/geminiService';
+import { GEMINI_MODELS, GeminiModel, DEFAULT_GEMINI_MODEL } from '../services/geminiService';
 import { getKitchenAssistance } from '../services/geminiService';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -47,7 +47,7 @@ export function GroceryAdvisorChat({ groceries, onAddToShoppingList, onOpenChang
   }]);
   const [input, setInput] = React.useState('');
   const [isLoading, setIsLoading] = React.useState(false);
-  const [selectedModel, setSelectedModel] = React.useState<GeminiModel>(GEMINI_MODELS.FLASH_LITE);
+  const [selectedModel, setSelectedModel] = React.useState<GeminiModel>(DEFAULT_GEMINI_MODEL);
   const [showModelSelector, setShowModelSelector] = React.useState(false);
 
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
@@ -203,6 +203,7 @@ export function GroceryAdvisorChat({ groceries, onAddToShoppingList, onOpenChang
       case GEMINI_MODELS.FLASH_LATEST: return 'Flash';
       case GEMINI_MODELS.FLASH_2_0: return 'Flash 2.0';
       case GEMINI_MODELS.FLASH_LITE: return 'Flash Lite';
+      case GEMINI_MODELS.FLASH_3_5_LITE: return '3.5 Flash-Lite';
       default: return 'Flash Lite';
     }
   };

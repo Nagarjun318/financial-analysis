@@ -3,6 +3,8 @@ import {
   callGeminiAPI,
   clearGeminiCache,
   GEMINI_MODELS,
+  BatchAbortedError,
+  predictTransactionCategoriesBatch,
 } from './geminiService';
 import { updateInvestmentValue, clearMarketCache } from './marketDataService';
 
@@ -52,6 +54,20 @@ describe('callGeminiAPI cache', () => {
     await callGeminiAPI('prompt-b', GEMINI_MODELS.FLASH_LITE);
     await callGeminiAPI('prompt-a', GEMINI_MODELS.FLASH_2_0);
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('predictTransactionCategoriesBatch abort', () => {
+  it('stops at the first failed batch and keeps static partials', async () => {
+    // Server path with no auth token → instant 401 (no network, no waiting).
+    vi.stubEnv('VITE_FUNCTION_URL', 'https://function.test');
+    const err = await predictTransactionCategoriesBatch([
+      { id: 1, description: 'SWIGGY order 123', amount: -450 },
+      { id: 2, description: 'mystery xyz qqq', amount: -100 },
+    ]).catch((e) => e);
+    expect(err).toBeInstanceOf(BatchAbortedError);
+    expect(err.failedBatch).toBe(1);
+    expect(err.partialResults).toEqual([{ id: 1, ai_category: 'Food' }]);
   });
 });
 

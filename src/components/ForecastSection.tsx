@@ -17,8 +17,10 @@ export function getForecastModelDisplayName(model: GeminiModel): string {
       return 'Flash Lite';
     case GEMINI_MODELS.FLASH_2_5:
       return 'Flash 2.5';
+    case GEMINI_MODELS.FLASH_3_5_LITE:
+      return '3.5 Flash-Lite';
     default:
-      return 'Flash Lite';
+      return '3.5 Flash-Lite';
   }
 }
 
@@ -130,7 +132,7 @@ const ForecastSection: React.FC<{ forecast: ForecastViewModel }> = ({ forecast }
                             }`}
                         >
                           {getForecastModelDisplayName(modelValue)}
-                          {modelValue === GEMINI_MODELS.FLASH_LITE && ' (Default)'}
+                          {modelValue === GEMINI_MODELS.FLASH_3_5_LITE && ' (Default)'}
                           {modelValue === GEMINI_MODELS.FLASH_LATEST && ' (Fallback)'}
                         </button>
                       ))}

@@ -12,11 +12,29 @@ export const ALLOWED_MODELS = new Set([
   'gemini-2.0-flash',
   'gemini-flash-lite-latest',
   'gemini-2.5-flash',
+  'gemini-3.5-flash-lite',
   'gemma-3-27b-it',
 ]);
 
 export const MAX_PROMPT_CHARS = 12_000;
 const MAX_OUTPUT_TOKENS = 2048;
+
+/** Upstream (Google/gateway) is throttling us — carries how long to wait. */
+export class RateLimitError extends Error {
+  retryAfterSeconds: number;
+  constructor(message: string, retryAfterSeconds: number = 30) {
+    super(message);
+    this.name = 'RateLimitError';
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+/** Google embeds `retryDelay: "13s"` in RetryInfo — honor it when present. */
+export function parseRetryAfterSeconds(bodyText: string): number {
+  const match = bodyText.match(/"retryDelay"\s*:\s*"(\d+)s"/);
+  const parsed = match ? Number.parseInt(match[1], 10) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 && parsed <= 300 ? parsed : 30;
+}
 
 export interface AiEnv {
   NEON_AI_GATEWAY_TOKEN?: string;
@@ -78,23 +96,37 @@ export async function completePrompt(
   });
 
   // 1. Branch AI Gateway (native Gemini dialect — model names pass through).
+  // Falls back to direct Gemini on any gateway failure (e.g. free-plan
+  // branches get gateway credentials injected but the account has AI Gateway
+  // disabled → 403). Gateway failures must never be fatal by themselves.
   const gatewayToken = env.NEON_AI_GATEWAY_TOKEN;
   const gatewayBase = (env.NEON_AI_GATEWAY_BASE_URL ?? '').replace(/\/+$/, '');
   if (gatewayToken && gatewayBase) {
-    const res = await fetch(`${gatewayBase}/gemini/v1beta/models/${model}:generateContent`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${gatewayToken}`,
-      },
-      body,
-    });
+    try {
+      const res = await fetch(`${gatewayBase}/gemini/v1beta/models/${model}:generateContent`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${gatewayToken}`,
+        },
+        body,
+      });
     if (!res.ok) {
-      throw new Error(`AI Gateway error: ${res.status} — ${await res.text()}`);
+      const errText = await res.text();
+      if (res.status === 429) {
+        throw new RateLimitError(
+          `AI Gateway rate limit: ${res.status} — ${errText}`,
+          parseRetryAfterSeconds(errText)
+        );
+      }
+      throw new Error(`AI Gateway error: ${res.status} — ${errText}`);
     }
     const text = extractText(await res.json());
     if (!text) throw new Error('AI Gateway returned no text.');
     return { text, via: 'gateway' };
+    } catch (err) {
+      console.warn('[api/ai] gateway failed, falling back to direct Gemini:', err);
+    }
   }
 
   // 2. Direct Gemini with the server-side key (never exposed to the browser).
@@ -113,7 +145,14 @@ export async function completePrompt(
     }
   );
   if (!res.ok) {
-    throw new Error(`Gemini error: ${res.status} — ${await res.text()}`);
+    const errText = await res.text();
+    if (res.status === 429) {
+      throw new RateLimitError(
+        `Gemini rate limit: ${res.status} — ${errText}`,
+        parseRetryAfterSeconds(errText)
+      );
+    }
+    throw new Error(`Gemini error: ${res.status} — ${errText}`);
   }
   const text = extractText(await res.json());
   if (!text) throw new Error('Gemini returned no text.');

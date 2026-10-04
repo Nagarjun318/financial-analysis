@@ -1,4 +1,4 @@
-import { callGeminiAPI, GEMINI_MODELS, GeminiModel } from './geminiService';
+import { callGeminiAPI, DEFAULT_GEMINI_MODEL, GeminiModel } from './geminiService';
 import { Asset, Liability, NetWorthSnapshot } from '../domain/networth/calculateNetWorth';
 
 /**
@@ -84,7 +84,7 @@ Provide a response in this exact JSON format (no markdown, just JSON):
 }`;
 
   try {
-    const response = await callGeminiAPI(prompt, GEMINI_MODELS.FLASH_LATEST);
+    const response = await callGeminiAPI(prompt, DEFAULT_GEMINI_MODEL);
     const jsonMatch = response.text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       return JSON.parse(jsonMatch[0]);
@@ -127,7 +127,7 @@ Respond in JSON format only:
 }`;
 
   try {
-    const response = await callGeminiAPI(prompt, GEMINI_MODELS.FLASH_LITE);
+    const response = await callGeminiAPI(prompt, DEFAULT_GEMINI_MODEL);
     const jsonMatch = response.text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       return JSON.parse(jsonMatch[0]);
@@ -153,7 +153,7 @@ export async function estimateMarketValue(
   assetType: string,
   currentValue: number,
   location: string = "Chennai, India",
-  model: GeminiModel = GEMINI_MODELS.FLASH_LATEST
+  model: GeminiModel = DEFAULT_GEMINI_MODEL
 ): Promise<MarketValueEstimate> {
   const prompt = `Estimate the current market value for this asset in ${location}.
 
@@ -196,7 +196,7 @@ export async function forecastNetWorth(
   timeline: NetWorthSnapshot[],
   liabilities: Liability[],
   monthsAhead: number,
-  model: GeminiModel = GEMINI_MODELS.FLASH_LATEST
+  model: GeminiModel = DEFAULT_GEMINI_MODEL
 ): Promise<NetWorthForecast> {
   const recentData = timeline.slice(0, 6).reverse();
 
@@ -287,7 +287,7 @@ export async function analyzeDebtOptimization(
   principal: number,
   interestRate: number,
   monthlyEMI: number,
-  model: GeminiModel = GEMINI_MODELS.FLASH_LATEST
+  model: GeminiModel = DEFAULT_GEMINI_MODEL
 ): Promise<DebtOptimizationInsight> {
   const prompt = `Analyze this debt for optimization opportunities in the Indian market context.
 
@@ -360,7 +360,7 @@ export async function chatAboutNetWorth(
   assets: Asset[],
   liabilities: Liability[],
   timeline: NetWorthSnapshot[],
-  model: GeminiModel = GEMINI_MODELS.FLASH_LITE
+  model: GeminiModel = DEFAULT_GEMINI_MODEL
 ): Promise<string> {
   const totalAssets = assets.reduce((sum, a) => sum + a.currentValue, 0);
   const totalLiabilities = liabilities.filter(l => !l.name.includes('(Completed)')).reduce((sum, l) => sum + (l.principal || 0), 0);
@@ -419,7 +419,7 @@ export async function analyzeGoal(
   targetAmount: number,
   currentAmount: number,
   deadline: string,
-  model: GeminiModel = GEMINI_MODELS.FLASH_LATEST
+  model: GeminiModel = DEFAULT_GEMINI_MODEL
 ): Promise<GoalInsight> {
   const today = new Date();
   const targetDate = new Date(deadline);
@@ -481,7 +481,7 @@ export async function suggestFinancialGoals(
   monthlyExpenses: number,
   assets: Asset[],
   liabilities: Liability[],
-  model: GeminiModel = GEMINI_MODELS.FLASH_LATEST
+  model: GeminiModel = DEFAULT_GEMINI_MODEL
 ): Promise<SuggestedGoal[]> {
   const monthlySavings = monthlyIncome - monthlyExpenses;
   const savingsRate = monthlyIncome > 0 ? (monthlySavings / monthlyIncome) * 100 : 0;
@@ -544,7 +544,7 @@ export async function chatAboutGoals(
   netWorth: number,
   monthlyIncome: number,
   monthlyExpenses: number,
-  model: GeminiModel = GEMINI_MODELS.FLASH_LITE
+  model: GeminiModel = DEFAULT_GEMINI_MODEL
 ): Promise<string> {
   const monthlySavings = monthlyIncome - monthlyExpenses;
   const totalTargetAmount = goals.reduce((sum, g) => sum + (g.target_amount || 0), 0);

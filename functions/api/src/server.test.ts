@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { bearerToken } from './auth.ts';
 import { isAllowedOrigin, corsPatterns } from './cors.ts';
 import { TtlCache } from './cache.ts';
-import { parseCompleteRequest, ALLOWED_MODELS } from './ai.ts';
+import { parseCompleteRequest, ALLOWED_MODELS, parseRetryAfterSeconds } from './ai.ts';
 import { parseCoords } from './weather.ts';
 import { limitFor } from './ratelimit.ts';
 
@@ -82,6 +82,18 @@ describe('parseCoords', () => {
     expect(parseCoords('19.07, 72.87')).toEqual({ lat: 19.07, lon: 72.87 });
     expect(parseCoords('Mumbai, India')).toBeNull();
     expect(parseCoords('200, 10')).toBeNull();
+  });
+});
+
+describe('parseRetryAfterSeconds', () => {
+  it('honors Google RetryInfo delay', () => {
+    expect(parseRetryAfterSeconds('{"details":[{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"13s"}]}')).toBe(13);
+  });
+
+  it('falls back to 30s on garbage', () => {
+    expect(parseRetryAfterSeconds('oops')).toBe(30);
+    expect(parseRetryAfterSeconds('{"retryDelay":"0s"}')).toBe(30);
+    expect(parseRetryAfterSeconds('{"retryDelay":"999s"}')).toBe(30);
   });
 });
 

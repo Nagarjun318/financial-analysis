@@ -3,7 +3,7 @@ import { TrendingUp, Calendar, AlertCircle } from 'lucide-react';
 import { forecastNetWorth, NetWorthForecast } from '../services/netWorthAI';
 import { NetWorthSnapshot, Liability } from '../domain/networth/calculateNetWorth';
 
-import { GEMINI_MODELS, GeminiModel } from '../services/geminiService';
+import { GEMINI_MODELS, GeminiModel, DEFAULT_GEMINI_MODEL } from '../services/geminiService';
 
 interface Props {
   timeline: NetWorthSnapshot[];
@@ -15,7 +15,7 @@ export const AIForecastChart: React.FC<Props> = ({ timeline, liabilities }) => {
   const [isLoading, setIsLoading] = React.useState(false);
   const [monthsAhead, setMonthsAhead] = React.useState(12);
   const [isUsingCache, setIsUsingCache] = React.useState(false);
-  const [selectedModel, setSelectedModel] = React.useState(GEMINI_MODELS.FLASH_LATEST as GeminiModel);
+  const [selectedModel, setSelectedModel] = React.useState(DEFAULT_GEMINI_MODEL);
   const lastCacheKeyRef = React.useRef('');
 
   // Create stable cache key based on actual data content, not references
@@ -113,6 +113,7 @@ export const AIForecastChart: React.FC<Props> = ({ timeline, liabilities }) => {
             onChange={e => setSelectedModel(e.target.value as GeminiModel)}
             className="text-sm px-3 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg flex-1 sm:flex-none"
           >
+            <option value={GEMINI_MODELS.FLASH_3_5_LITE}>3.5 Flash-Lite (Default)</option>
             <option value={GEMINI_MODELS.FLASH_LITE}>Flash Lite</option>
             <option value={GEMINI_MODELS.FLASH_LATEST}>Flash Latest</option>
             <option value={GEMINI_MODELS.PRO_LATEST}>Pro</option>

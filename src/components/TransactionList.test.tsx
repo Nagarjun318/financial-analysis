@@ -5,6 +5,25 @@ import userEvent from '@testing-library/user-event';
 import TransactionList from './TransactionList.tsx';
 import type { TransactionFilters } from './Dashboard.tsx';
 import type { Transaction } from '../types.ts';
+import { clearTransactionAICategories, updateTransactionAICategoriesBatch } from '../services/neonClient';
+import { BatchAbortedError, predictTransactionCategoriesBatch } from '../services/geminiService';
+
+vi.mock('../services/neonClient', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/neonClient')>();
+  return {
+    ...actual,
+    clearTransactionAICategories: vi.fn(async () => ({ success: true, clearedCount: 1 })),
+    updateTransactionAICategoriesBatch: vi.fn(async () => ({ success: true })),
+  };
+});
+
+vi.mock('../services/geminiService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/geminiService')>();
+  return {
+    ...actual,
+    predictTransactionCategoriesBatch: vi.fn(),
+  };
+});
 
 const baseFilters: TransactionFilters = {
   globalSearch: '',
@@ -59,6 +78,61 @@ describe('TransactionList', () => {
     // First data row (after header) should be the smallest amount.
     expect(within(rows[1]).getByText('Grocery store')).toBeInTheDocument();
     expect(bodyText).toContain('grocery');
+  });
+
+  it('select-all checkbox selects all rows and shows the bulk bar', async () => {
+    const user = userEvent.setup();
+    renderList();
+    const selectAll = screen.getByRole('checkbox', { name: /select all rows/i });
+    expect(selectAll).not.toBeChecked();
+    await user.click(selectAll);
+    expect(screen.getByText('3 selected')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /export selected rows/i })).toBeInTheDocument();
+    // Row checkboxes reflect selection
+    expect(screen.getByRole('checkbox', { name: /select transaction grocery store/i })).toBeChecked();
+  });
+
+  it('auto-selects all rows when a filter is applied', async () => {
+    renderList({ aiCategory: 'not_predicted' });
+    expect(await screen.findByText('3 selected')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /deselect all rows/i })).toBeChecked();
+  });
+
+  it('does not auto-select rows without a filter', () => {
+    renderList();
+    expect(screen.queryByText(/selected/)).not.toBeInTheDocument();
+  });
+
+  it('clear predictions is disabled when no selected rows have predictions', () => {
+    renderList();
+    expect(screen.getByRole('button', { name: /clear ai predictions for selected rows/i })).toBeDisabled();
+  });
+
+  it('prediction abort saves partials and shows an error', async () => {
+    const user = userEvent.setup();
+    vi.mocked(predictTransactionCategoriesBatch).mockRejectedValueOnce(
+      new BatchAbortedError('Batch 1 failed: busy', [{ id: 2, ai_category: 'Food' }], 1)
+    );
+    // Filter auto-selects all rows; ids 2 and 3 need AI.
+    renderList({ aiCategory: 'not_predicted' });
+    await user.click(screen.getByRole('button', { name: 'Predict AI categories' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/stopped.*saved 1 earlier prediction/i);
+    expect(updateTransactionAICategoriesBatch).toHaveBeenCalledWith([{ id: 2, ai_category: 'Food' }]);
+  });
+
+  it('clear predictions only clears the selected rows', async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    try {
+      // Filter auto-selects all 3 rows, but only id 1 has an AI prediction.
+      renderList({ aiCategory: 'not_predicted' });
+      const clearButton = await screen.findByRole('button', { name: /clear ai predictions for selected rows/i });
+      expect(clearButton).not.toBeDisabled();
+      await user.click(clearButton);
+      expect(clearTransactionAICategories).toHaveBeenCalledWith([1]);
+    } finally {
+      confirmSpy.mockRestore();
+    }
   });
 
   it('delete button calls onDelete with the transaction id', async () => {

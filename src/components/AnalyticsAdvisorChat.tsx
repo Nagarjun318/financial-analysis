@@ -2,7 +2,7 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { Send, X, Settings, Loader2, Bot, Plus, BarChart2 } from 'lucide-react';
 import { Transaction } from '../types';
-import { GEMINI_MODELS, GeminiModel, getAnalyticsAdvice } from '../services/geminiService';
+import { GEMINI_MODELS, GeminiModel, DEFAULT_GEMINI_MODEL, getAnalyticsAdvice } from '../services/geminiService';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { formatCurrency } from '../utils';
@@ -39,7 +39,7 @@ export function AnalyticsAdvisorChat({ transactions, onOpenChange, externalTrigg
     }] as Message[]);
     const [input, setInput] = React.useState('');
     const [isLoading, setIsLoading] = React.useState(false);
-    const [selectedModel, setSelectedModel] = React.useState(GEMINI_MODELS.FLASH_LITE as GeminiModel);
+    const [selectedModel, setSelectedModel] = React.useState(DEFAULT_GEMINI_MODEL);
     const [showModelSelector, setShowModelSelector] = React.useState(false);
 
     const messagesEndRef = React.useRef(null as HTMLDivElement | null);
@@ -215,6 +215,7 @@ export function AnalyticsAdvisorChat({ transactions, onOpenChange, externalTrigg
             case GEMINI_MODELS.FLASH_LATEST: return 'Flash';
             case GEMINI_MODELS.FLASH_2_0: return 'Flash 2.0';
             case GEMINI_MODELS.FLASH_LITE: return 'Flash Lite';
+            case GEMINI_MODELS.FLASH_3_5_LITE: return '3.5 Flash-Lite';
             default: return 'Flash Lite';
         }
     };

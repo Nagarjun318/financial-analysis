@@ -23,7 +23,7 @@ import {
   Tooltip as ReTooltip,
   Legend
 } from 'recharts';
-import { callGeminiAPI, GEMINI_MODELS, GeminiModel } from '../services/geminiService';
+import { callGeminiAPI, GEMINI_MODELS, GeminiModel, DEFAULT_GEMINI_MODEL } from '../services/geminiService';
 import { formatCurrency } from '../utils';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -70,7 +70,7 @@ const InvestmentPage: React.FC<InvestmentPageProps> = ({ userId }) => {
   // --- State ---
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [selectedAnalyzeModel, setSelectedAnalyzeModel] = useState<GeminiModel>(GEMINI_MODELS.PRO_LATEST);
+  const [selectedAnalyzeModel, setSelectedAnalyzeModel] = useState<GeminiModel>(DEFAULT_GEMINI_MODEL);
   const [showAnalyzeModelSelector, setShowAnalyzeModelSelector] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(false);

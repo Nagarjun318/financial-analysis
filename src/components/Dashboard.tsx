@@ -24,7 +24,7 @@ import NaturalLanguageSearch from './NaturalLanguageSearch.tsx';
 import { FinancialAdvisorChat } from './FinancialAdvisorChat.tsx';
 import { Upload, CalendarDays, Info, Settings, User } from 'lucide-react';
 import { useLastUpload, formatLastUpload } from '../hooks/useLastUpload.ts';
-import { GEMINI_MODELS } from '../services/geminiService.ts';
+import { DEFAULT_GEMINI_MODEL } from '../services/geminiService.ts';
 import { useForecast } from '../hooks/useForecast.ts';
 
 interface DashboardProps {
@@ -92,7 +92,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [aiSearchResults, setAiSearchResults] = React.useState(null as Transaction[] | null);
   const [chatPanelWidth, setChatPanelWidth] = React.useState(0);
   // Forecast state machine lives in useForecast (was ~200 lines here).
-  const forecastVM = useForecast(allTransactions, forecast, userId, GEMINI_MODELS.FLASH_LITE);
+  const forecastVM = useForecast(allTransactions, forecast, userId, DEFAULT_GEMINI_MODEL);
   // Phase 3: user override for the auto-virtualized large table.
   const [forceFullTable, setForceFullTable] = React.useState(false);
   // Phase 6: dashboard customization — per-user section visibility.
@@ -472,6 +472,10 @@ const Dashboard: React.FC<DashboardProps> = ({
                 transactions={filteredTransactions}
                 onEdit={onEditTransaction}
                 onDelete={onDeleteTransaction}
+                filters={filters}
+                onFilterChange={handleFilterChange}
+                onRefreshData={onRefreshData}
+                searchActive={aiSearchResults !== null}
               />
             </Suspense>
           </>
@@ -496,6 +500,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               onEdit={onEditTransaction}
               onDelete={onDeleteTransaction}
               onRefreshData={onRefreshData}
+              searchActive={aiSearchResults !== null}
             />
           </>
         )}

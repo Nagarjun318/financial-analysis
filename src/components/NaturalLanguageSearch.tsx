@@ -1,6 +1,6 @@
 import React from 'react';
 import { Search, Sparkles, Loader2, X, Settings } from 'lucide-react';
-import { searchTransactionsWithAI, GEMINI_MODELS, GeminiModel, SearchResult } from '../services/geminiService';
+import { searchTransactionsWithAI, GEMINI_MODELS, GeminiModel, DEFAULT_GEMINI_MODEL, SearchResult } from '../services/geminiService';
 import { Transaction } from '../types';
 import AIChart from './AIChart';
 
@@ -19,7 +19,7 @@ const NaturalLanguageSearch: React.FC<NaturalLanguageSearchProps> = ({
   const [isSearching, setIsSearching] = React.useState(false);
   const [error, setError] = React.useState('');
   const [activeSearch, setActiveSearch] = React.useState('');
-  const [selectedModel, setSelectedModel] = React.useState(GEMINI_MODELS.PRO_LATEST as GeminiModel);
+  const [selectedModel, setSelectedModel] = React.useState(DEFAULT_GEMINI_MODEL);
   const [showModelSelector, setShowModelSelector] = React.useState(false);
   const [fallbackAlert, setFallbackAlert] = React.useState('');
   const [searchResult, setSearchResult] = React.useState(null as SearchResult | null);
@@ -30,6 +30,7 @@ const NaturalLanguageSearch: React.FC<NaturalLanguageSearchProps> = ({
       [GEMINI_MODELS.FLASH_LATEST]: 'Flash',
       [GEMINI_MODELS.FLASH_2_0]: 'Flash 2.0',
       [GEMINI_MODELS.FLASH_LITE]: 'Flash Lite',
+      [GEMINI_MODELS.FLASH_3_5_LITE]: '3.5 Flash-Lite',
       [GEMINI_MODELS.FLASH_2_5]: 'Flash 2.5',
       [GEMINI_MODELS.GEMMA_3]: 'Gemma 3',
     };

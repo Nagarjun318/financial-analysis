@@ -2,7 +2,7 @@ import React from 'react';
 const { useState, useEffect } = React;
 import { CloudRain, Cloud, Sun, Droplets, RefreshCw, X, ChevronDown, ChevronUp, Loader2, MapPin, Navigation } from 'lucide-react';
 import { getWeatherData, generateWeatherGrocerySuggestions, WeatherData, WeatherGrocerySuggestion } from '../services/weatherService';
-import { GEMINI_MODELS, GeminiModel } from '../services/geminiService';
+import { GeminiModel, DEFAULT_GEMINI_MODEL } from '../services/geminiService';
 import { showToast } from '../utils/toast';
 
 interface WeatherSmartAssistantProps {
@@ -25,7 +25,7 @@ const WeatherSmartAssistant: React.FC<WeatherSmartAssistantProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isExpanded, setIsExpanded] = useState(true);
-  const [selectedModel] = useState<GeminiModel>(GEMINI_MODELS.FLASH_LITE);
+  const [selectedModel] = useState<GeminiModel>(DEFAULT_GEMINI_MODEL);
   const [showLocationInput, setShowLocationInput] = useState(false);
   const [locationInput, setLocationInput] = useState(locationName || location);
   const [gettingLocation, setGettingLocation] = useState(false);

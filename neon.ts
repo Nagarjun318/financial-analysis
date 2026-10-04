@@ -21,6 +21,9 @@ export default defineConfig({
         GOOGLE_API_KEY: process.env.GOOGLE_API_KEY ?? process.env.VITE_GEMINI_API_KEY!,
         // Gemini key for the direct fallback when gateway creds are absent.
         GEMINI_API_KEY: process.env.GEMINI_API_KEY ?? process.env.VITE_GEMINI_API_KEY!,
+        // Hourly AI request budget per user (server default 60). Raise for
+        // bulk jobs (e.g. 748 uncategorized → ~75 requests at 10/batch).
+        AI_HOURLY_LIMIT: process.env.AI_HOURLY_LIMIT ?? '500',
         // Optional: comma-separated extra origins (code defaults cover
         // localhost + *.github.io). Omit to leave the live value untouched.
       },

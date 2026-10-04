@@ -163,6 +163,51 @@ export async function updateTransactionAICategoriesBatch(
 }
 
 /**
+ * Clear AI categories (set to null) for specific transactions only.
+ * Other rows keep their predictions.
+ */
+export async function clearTransactionAICategories(
+  ids: number[]
+): Promise<{ success: boolean; error?: string; clearedCount?: number }> {
+  if (!client) {
+    return { success: false, error: 'Neon not configured' };
+  }
+
+  if (ids.length === 0) {
+    return { success: true, clearedCount: 0 };
+  }
+
+  try {
+    let clearedCount = 0;
+
+    // Chunk `.in()` lists to avoid oversized query URLs
+    const chunkSize = 100;
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunk = ids.slice(i, i + chunkSize);
+      const { error } = await client
+        .from('transactions')
+        .update({ ai_category: null })
+        .in('id', chunk);
+
+      if (error) {
+        console.error('Error clearing AI categories for selected rows:', error);
+        return { success: false, error: error.message };
+      }
+
+      clearedCount += chunk.length;
+    }
+
+    return { success: true, clearedCount };
+  } catch (error) {
+    console.error('Error clearing AI categories for selected rows:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+}
+
+/**
  * Clear all AI categories (set to null)
  */
 export async function clearAllAICategories(): Promise<{ success: boolean; error?: string }> {

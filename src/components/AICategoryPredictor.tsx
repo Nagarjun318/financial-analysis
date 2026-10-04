@@ -1,7 +1,7 @@
 import React from 'react';
 import { Transaction } from '../types';
 import { Sparkles, RefreshCw, Check, X, Info } from 'lucide-react';
-import { predictTransactionCategoriesBatch } from '../services/geminiService';
+import { predictTransactionCategoriesBatch, BatchAbortedError } from '../services/geminiService';
 import { updateTransactionAICategoriesBatch } from '../services/neonClient';
 
 interface AICategoryPredictorProps {
@@ -46,11 +46,11 @@ export const AICategoryPredictor: React.FC<AICategoryPredictorProps> = ({
     setResult(null);
     setProgress({ current: 0, total: transactionsNeedingAI.length });
 
+    const allUpdates: Array<{ id: number; ai_category: string }> = [];
     try {
       // Process in batches of 20 for better API efficiency
       const batchSize = 20;
-      const allUpdates: Array<{ id: number; ai_category: string }> = [];
-      
+
       for (let i = 0; i < transactionsNeedingAI.length; i += batchSize) {
         const batch = transactionsNeedingAI.slice(i, i + batchSize);
         
@@ -91,7 +91,27 @@ export const AICategoryPredictor: React.FC<AICategoryPredictorProps> = ({
       }
     } catch (err) {
       console.error('Category prediction error:', err);
-      setError(err instanceof Error ? err.message : 'Failed to predict categories');
+      // A batch failure stops later batches — still save what succeeded.
+      if (err instanceof BatchAbortedError) {
+        const byId = new Map(err.partialResults.map(p => [p.id, p.ai_category]));
+        for (const t of transactionsNeedingAI) {
+          if (t.id && byId.has(t.id) && !allUpdates.some(u => u.id === t.id)) {
+            allUpdates.push({ id: t.id, ai_category: byId.get(t.id)! });
+          }
+        }
+        if (allUpdates.length > 0) {
+          const partial = await updateTransactionAICategoriesBatch(allUpdates);
+          if (partial.success) {
+            setResult({ success: partial.updatedCount || 0, failed: 0 });
+            setTimeout(() => {
+              onCategoriesUpdated();
+            }, 1000);
+          }
+        }
+        setError(`Prediction stopped — ${err.message}. Saved ${allUpdates.length} earlier prediction(s).`);
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to predict categories');
+      }
     } finally {
       setIsPredicting(false);
     }

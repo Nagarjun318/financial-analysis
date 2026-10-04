@@ -13,6 +13,49 @@ interface GoalsPageProps {
     transactions: Transaction[];
 }
 
+/**
+ * Average monthly income/expenses over the N most recent months present in
+ * the data (credits → income, debits → expenses). Used for goal advice so a
+ * recorded salary actually shows up instead of ₹0.
+ */
+export function averageMonthlyFlow(
+    transactions: Transaction[],
+    months: number = 3,
+    currentMonth?: string
+): { avgIncome: number; avgExpenses: number } {
+    const byMonth = new Map<string, { income: number; expenses: number }>();
+    for (const t of transactions) {
+        const m = t.date.slice(0, 7);
+        let entry = byMonth.get(m);
+        if (!entry) {
+            entry = { income: 0, expenses: 0 };
+            byMonth.set(m, entry);
+        }
+        if (t.type === 'credit') {
+            entry.income += t.amount;
+        } else {
+            entry.expenses += Math.abs(t.amount);
+        }
+    }
+    // The in-progress month is partial (e.g. one ₹428 credit on Oct 3) and
+    // would drag the average down — average completed months instead.
+    const now = new Date();
+    const inProgress =
+        currentMonth ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const all = [...byMonth.keys()].sort().reverse();
+    let recent = all.filter((m) => m !== inProgress).slice(0, months);
+    if (recent.length === 0) {
+        // All data is in the current month — use it rather than zeros.
+        recent = all.slice(0, months);
+    }
+    if (recent.length === 0) {
+        return { avgIncome: 0, avgExpenses: 0 };
+    }
+    const avgIncome = recent.reduce((s, m) => s + (byMonth.get(m)?.income ?? 0), 0) / recent.length;
+    const avgExpenses = recent.reduce((s, m) => s + (byMonth.get(m)?.expenses ?? 0), 0) / recent.length;
+    return { avgIncome, avgExpenses };
+}
+
 const GoalsPage: React.FC<GoalsPageProps> = ({ userId, transactions }) => {
     const { goals, isLoading, addGoal, updateGoal, deleteGoal } = useGoals(userId);
     const [isAdding, setIsAdding] = React.useState(false);
@@ -41,9 +84,9 @@ const GoalsPage: React.FC<GoalsPageProps> = ({ userId, transactions }) => {
         const timeline = buildNetWorthTimeline(transactions, assets, liabilities);
 
         const currentNetWorth = timeline.length > 0 ? timeline[0].netWorth : 0;
-        const recentMonths = timeline.slice(0, 3);
-        const avgIncome = recentMonths.reduce((sum: number, m: any) => sum + (m.totalIncome || 0), 0) / Math.max(recentMonths.length, 1);
-        const avgExpenses = recentMonths.reduce((sum: number, m: any) => sum + (m.totalExpenses || 0), 0) / Math.max(recentMonths.length, 1);
+        // NetWorthSnapshot carries no income/expense fields — average the
+        // actual credit/debit flow over the 3 most recent months instead.
+        const { avgIncome, avgExpenses } = averageMonthlyFlow(transactions, 3);
 
         return { currentNetWorth, avgIncome, avgExpenses, assets, liabilities };
     }, [transactions]);
@@ -97,9 +140,7 @@ const GoalsPage: React.FC<GoalsPageProps> = ({ userId, transactions }) => {
             const timeline = buildNetWorthTimeline(transactions, assets, liabilities);
 
             const currentNetWorth = timeline.length > 0 ? timeline[0].netWorth : 0;
-            const recentMonths = timeline.slice(0, 3);
-            const avgIncome = recentMonths.reduce((sum: number, m: any) => sum + (m.totalIncome || 0), 0) / Math.max(recentMonths.length, 1);
-            const avgExpenses = recentMonths.reduce((sum: number, m: any) => sum + (m.totalExpenses || 0), 0) / Math.max(recentMonths.length, 1);
+            const { avgIncome, avgExpenses } = averageMonthlyFlow(transactions, 3);
 
             const suggestions = await suggestFinancialGoals(
                 currentNetWorth,

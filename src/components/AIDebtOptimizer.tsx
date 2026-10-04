@@ -2,7 +2,7 @@ import React from 'react';
 import { Zap, TrendingDown, Award, ArrowRight, Loader2, Percent } from 'lucide-react';
 import { analyzeDebtOptimization, DebtOptimizationInsight } from '../services/netWorthAI';
 
-import { GEMINI_MODELS, GeminiModel } from '../services/geminiService';
+import { GEMINI_MODELS, GeminiModel, DEFAULT_GEMINI_MODEL } from '../services/geminiService';
 
 interface AIDebtOptimizerProps {
     liabilityName: string;
@@ -22,7 +22,7 @@ export const AIDebtOptimizer: React.FC<AIDebtOptimizerProps> = ({
     const [insight, setInsight] = React.useState(null as DebtOptimizationInsight | null);
     const [isLoading, setIsLoading] = React.useState(false);
     const [error, setError] = React.useState(false);
-    const [selectedModel, setSelectedModel] = React.useState(GEMINI_MODELS.FLASH_LATEST as GeminiModel);
+    const [selectedModel, setSelectedModel] = React.useState(DEFAULT_GEMINI_MODEL);
 
     const fetchInsight = React.useCallback(async (force = false) => {
         // Check cache first if not forced
@@ -112,6 +112,7 @@ export const AIDebtOptimizer: React.FC<AIDebtOptimizerProps> = ({
                     onChange={(e) => setSelectedModel(e.target.value as GeminiModel)}
                     className="text-[10px] bg-transparent border-none outline-none text-gray-600 dark:text-gray-300 cursor-pointer"
                 >
+                    <option value={GEMINI_MODELS.FLASH_3_5_LITE}>3.5 Flash-Lite (Default)</option>
                     <option value={GEMINI_MODELS.FLASH_LITE}>Flash Lite</option>
                     <option value={GEMINI_MODELS.FLASH_LATEST}>Flash Latest</option>
                     <option value={GEMINI_MODELS.PRO_LATEST}>Pro</option>
