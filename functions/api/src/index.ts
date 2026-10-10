@@ -73,9 +73,16 @@ app.use('*', async (c, next) => {
   if (c.req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers });
   }
-  await next();
-  for (const [key, value] of Object.entries(headers)) {
-    c.res.headers.set(key, value);
+  // finally (not just post-next): Hono skips code after `await next()` when
+  // a handler throws, which used to strip CORS headers from 500s and turn
+  // them into opaque browser "Failed to fetch" errors. The onError handler
+  // below re-applies the headers for the same reason.
+  try {
+    await next();
+  } finally {
+    for (const [key, value] of Object.entries(headers)) {
+      c.res.headers.set(key, value);
+    }
   }
 });
 
@@ -259,11 +266,15 @@ app.get('/api/weather/by-location', async (c) => {
   }
 });
 
-app.notFound((c) => c.json({ error: 'Not found.' }, 404));
+app.notFound((c) => {
+  const headers = corsHeaders(c.req.raw, corsPatterns(envOf(c)));
+  return c.json({ error: 'Not found.' }, 404, headers);
+});
 
 app.onError((err, c) => {
   console.error('[api] unhandled error:', err);
-  return c.json({ error: 'Internal server error.' }, 500);
+  const headers = corsHeaders(c.req.raw, corsPatterns(envOf(c)));
+  return c.json({ error: 'Internal server error.' }, 500, headers);
 });
 
 export default app;

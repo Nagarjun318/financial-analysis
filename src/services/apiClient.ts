@@ -24,19 +24,27 @@ export function isFunctionConfigured(): boolean {
 }
 
 /**
- * Short-lived bearer token for Function calls. Prefers the native client
- * (`token()` → 15-min EdDSA JWT); falls back to the adapter session's
- * access token. Returns null when signed out.
+ * Short-lived bearer token for Function calls. Both sources below use real,
+ * typed session routes (`get-session` → `session.token`, the EdDSA JWT the
+ * server injects via the `set-auth-jwt` header).
+ *
+ * Do NOT call untyped methods on `authClient` (e.g. `authClient.token()`):
+ * the Better Auth client is a dynamic proxy, so any unknown property access
+ * followed by a call is sent to the server as a bogus endpoint (previously
+ * `GET …/auth/token`, and the same misuse family as the
+ * `…/auth/fetch-options/method/to-upper-case` 404s). Returns null when
+ * signed out.
  */
-interface NativeTokenClient {
-  token?: () => Promise<{ data?: { token?: string } }>;
+interface NativeSessionClient {
+  getSession?: () => Promise<{ data?: { session?: { token?: string } | null } | null }>;
 }
 
 export async function getAccessToken(): Promise<string | null> {
   try {
-    const native = authClient as unknown as NativeTokenClient | null;
-    const { data } = (await native?.token?.()) ?? {};
-    if (typeof data?.token === 'string' && data.token.length > 0) return data.token;
+    const native = authClient as unknown as NativeSessionClient | null;
+    const { data } = (await native?.getSession?.()) ?? {};
+    const token = data?.session?.token;
+    if (typeof token === 'string' && token.length > 0) return token;
   } catch {
     // fall through to the adapter session
   }

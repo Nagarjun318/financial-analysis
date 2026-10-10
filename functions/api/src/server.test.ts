@@ -25,20 +25,35 @@ describe('isAllowedOrigin', () => {
     expect(isAllowedOrigin('http://localhost:9999', ['http://localhost:5173'])).toBe(false);
   });
 
-  it('supports *.github.io wildcards for the Pages deploy', () => {
+  it('supports *.github.io and *.vercel.app wildcards for hosted deploys', () => {
     expect(isAllowedOrigin('https://user.github.io', ['https://*.github.io'])).toBe(true);
     expect(isAllowedOrigin('https://evil.com', ['https://*.github.io'])).toBe(false);
+    expect(
+      isAllowedOrigin('https://financial-analysis-ivory.vercel.app', ['https://*.vercel.app'])
+    ).toBe(true);
+    expect(
+      isAllowedOrigin('https://financial-analysis-ivory.vercel.app', ['https://*.github.io'])
+    ).toBe(false);
   });
 
   it('rejects garbage', () => {
     expect(isAllowedOrigin('not-a-url', ['http://localhost:5173'])).toBe(false);
   });
 
-  it('reads ALLOWED_ORIGINS env with localhost+Pages defaults', () => {
+  it('merges ALLOWED_ORIGINS with localhost+Pages+Vercel defaults', () => {
     expect(corsPatterns({})).toContain('https://*.github.io');
-    expect(corsPatterns({ ALLOWED_ORIGINS: 'https://app.example.com, http://localhost:5173' })).toEqual([
-      'https://app.example.com',
+    expect(corsPatterns({})).toContain('https://*.vercel.app');
+    // Extra origins extend the defaults (never replace them — setting one
+    // custom origin must not silently drop localhost/Pages/Vercel).
+    expect(
+      corsPatterns({ ALLOWED_ORIGINS: 'https://app.example.com, http://localhost:5173' })
+    ).toEqual([
       'http://localhost:5173',
+      'http://localhost:4173',
+      'http://127.0.0.1:5173',
+      'https://*.github.io',
+      'https://*.vercel.app',
+      'https://app.example.com',
     ]);
   });
 });

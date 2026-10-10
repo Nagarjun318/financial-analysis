@@ -50,11 +50,17 @@ function initClient(): any {
 export const client: any = initClient();
 
 /**
- * Native Managed Auth client (Phase 4). Used for short-lived Function bearer
- * tokens (`authClient.token()` → `data.token`) and any future native Better
- * Auth UI. Session reads + the Data API compat surface stay on `client`
- * (SupabaseAuthAdapter) — see MODERNIZATION_PLAN Phase 4 for why the login
- * UI itself was deliberately not re-plumbed.
+ * Native Managed Auth client (Phase 4). Used for Function bearer tokens via
+ * the typed `getSession()` route (`data.session.token`, the server-injected
+ * EdDSA JWT) and any future native Better Auth UI. Session reads + the Data
+ * API compat surface stay on `client` (SupabaseAuthAdapter) — see
+ * MODERNIZATION_PLAN Phase 4 for why the login UI itself was deliberately
+ * not re-plumbed.
+ *
+ * NOTE: this client is a Better Auth dynamic proxy — only call real,
+ * documented endpoints on it (`getSession`, `signIn.*`, …). Any unknown
+ * property access followed by a call (e.g. the old `authClient.token()`)
+ * is sent to the server as a bogus kebab-cased path and 404s.
  */
 import { createAuthClient } from '@neondatabase/auth';
 import { BetterAuthReactAdapter } from '@neondatabase/auth/react/adapters';

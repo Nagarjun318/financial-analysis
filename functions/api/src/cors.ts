@@ -10,15 +10,29 @@ const DEFAULT_PATTERNS = [
   'http://localhost:4173',
   'http://127.0.0.1:5173',
   'https://*.github.io',
+  // Production SPA (Vercel) + preview deploys. Without this, browsers block
+  // every direct Function call with "No 'Access-Control-Allow-Origin'".
+  'https://*.vercel.app',
 ];
 
 export function corsPatterns(env: { ALLOWED_ORIGINS?: string }): string[] {
   const raw = (env.ALLOWED_ORIGINS ?? '').trim();
-  if (!raw) return DEFAULT_PATTERNS;
-  return raw
+  const extra = raw
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
+  // Merge (don't replace): setting ALLOWED_ORIGINS must never silently drop
+  // the built-in localhost/Pages/Vercel origins. De-duplicated, defaults first.
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const pattern of [...DEFAULT_PATTERNS, ...extra]) {
+    const key = pattern.toLowerCase().replace(/\/+$/, '');
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(pattern);
+    }
+  }
+  return out;
 }
 
 /** Pure helper (unit-tested): does `origin` match an allowlist pattern? */

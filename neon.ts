@@ -24,8 +24,10 @@ export default defineConfig({
         // Hourly AI request budget per user (server default 60). Raise for
         // bulk jobs (e.g. 748 uncategorized → ~75 requests at 10/batch).
         AI_HOURLY_LIMIT: process.env.AI_HOURLY_LIMIT ?? '500',
-        // Optional: comma-separated extra origins (code defaults cover
-        // localhost + *.github.io). Omit to leave the live value untouched.
+        // Optional: comma-separated extra origins. These MERGE with the
+        // built-in defaults (localhost + *.github.io + *.vercel.app), so
+        // setting this can never lock out the Vercel SPA or local dev.
+        // Omit to leave the live value untouched.
       },
     },
   },
