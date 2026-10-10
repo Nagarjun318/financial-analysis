@@ -58,9 +58,15 @@ export const client: any = initClient();
  * not re-plumbed.
  *
  * NOTE: this client is a Better Auth dynamic proxy — only call real,
- * documented endpoints on it (`getSession`, `signIn.*`, …). Any unknown
- * property access followed by a call (e.g. the old `authClient.token()`)
- * is sent to the server as a bogus kebab-cased path and 404s.
+ * documented endpoints on it (`getSession`, `signIn.*`, …), and only with
+ * plain receiver-less calls (`const f = proxy.fn; f()`). Two banned patterns,
+ * both verified to fire bogus network requests:
+ * - untyped methods (e.g. the old `authClient.token()` → `GET …/auth/token`);
+ * - optional calls (`proxy.fn?.()`): TS/esbuild compiles these to
+ *   `fn.call(proxy)`, and `.call` on the proxy resolves to another proxied
+ *   path invoked WITH the proxy as its argument — firing the production
+ *   `GET …/auth/fetch-options/method/to-upper-case` 404 and aborting the
+ *   real request. See `getAccessToken` in apiClient.ts for the safe pattern.
  */
 import { createAuthClient } from '@neondatabase/auth';
 import { BetterAuthReactAdapter } from '@neondatabase/auth/react/adapters';
