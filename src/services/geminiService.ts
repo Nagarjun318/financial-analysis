@@ -267,6 +267,19 @@ export async function generateMonthlyInsight(transactions: Transaction[]): Promi
 	return { monthKeys, narrative };
 }
 
+/** How chart bars/slices should be aggregated in AI search visualizations. */
+export type ChartGroupBy = 'ai_category' | 'category' | 'transaction' | 'month';
+
+const CHART_GROUP_BY_VALUES: readonly ChartGroupBy[] = ['ai_category', 'category', 'transaction', 'month'];
+
+function parseChartGroupBy(value: unknown): ChartGroupBy | null {
+	if (typeof value !== 'string') return null;
+	const normalized = value.trim().toLowerCase();
+	return (CHART_GROUP_BY_VALUES as readonly string[]).includes(normalized)
+		? (normalized as ChartGroupBy)
+		: null;
+}
+
 export interface SearchResult {
 	transactions: Transaction[];
 	usedFallback: boolean;
@@ -274,6 +287,7 @@ export interface SearchResult {
 	visualize?: boolean;
 	chartType?: 'bar' | 'pie' | 'line';
 	chartTitle?: string;
+	groupBy?: ChartGroupBy | null;
 }
 
 /**
@@ -331,7 +345,8 @@ export async function searchTransactionsWithAI(
 		"sortOrder": "asc" | "desc" | null,
 		"visualize": boolean,
 		"chartType": "bar" | "pie" | "line" | null,
-		"chartTitle": string | null
+		"chartTitle": string | null,
+		"groupBy": "ai_category" | "category" | "transaction" | "month" | null
 	}
 
 	Examples:
@@ -342,9 +357,10 @@ export async function searchTransactionsWithAI(
 	- "top 10 expenses" → {"type": "debit", "limit": 10, "sortBy": "amount", "sortOrder": "desc"}
 	- "5 largest shopping expenses" → {"categories": ["Shopping"], "type": "debit", "limit": 5, "sortBy": "amount", "sortOrder": "desc"}
 	- "recent 20 transactions" → {"limit": 20, "sortBy": "date", "sortOrder": "desc"}
-	- "generate chart for top 10 expenses" → {"type": "debit", "limit": 10, "sortBy": "amount", "sortOrder": "desc", "visualize": true, "chartType": "bar", "chartTitle": "Top 10 Expenses"}
-	- "show pie chart of expenses by category" → {"type": "debit", "visualize": true, "chartType": "pie", "chartTitle": "Expenses by Category"}
-	- "graph my monthly spending" → {"visualize": true, "chartType": "line", "chartTitle": "Monthly Spending"}
+	- "generate chart for top 10 expenses" → {"type": "debit", "limit": 10, "sortBy": "amount", "sortOrder": "desc", "visualize": true, "chartType": "bar", "groupBy": "transaction", "chartTitle": "Top 10 Expenses"}
+	- "show pie chart of expenses by category" → {"type": "debit", "visualize": true, "chartType": "pie", "groupBy": "category", "chartTitle": "Expenses by Category"}
+	- "graph my monthly spending" → {"visualize": true, "chartType": "line", "groupBy": "month", "chartTitle": "Monthly Spending"}
+	- "chart of September 2026 expenses grouped by AI category" → {"type": "debit", "startDate": "2026-09-01", "endDate": "2026-09-30", "visualize": true, "chartType": "bar", "groupBy": "ai_category", "chartTitle": "September 2026 Expenses by AI Category"}
 
 	Important:
 	- For relative dates like "last month", calculate the actual dates based on current date being ${new Date().toISOString().split('T')[0]}
@@ -354,6 +370,7 @@ export async function searchTransactionsWithAI(
 	- For "recent" or "latest", set sortBy="date", sortOrder="desc"
 	- If query mentions "chart", "graph", "visualize", "pie chart", "bar chart", set visualize=true
 	- Choose chartType: "bar" for comparisons/rankings, "pie" for category distributions, "line" for trends over time
+	- Choose groupBy from what the chart buckets must be: "ai_category" when the query says "AI category" (or "AI-category", "ai category"), "category" when it says "category" without AI, "month" for trends over time or monthly breakdowns, "transaction" for top-N / largest / individual-item rankings. When the query names no grouping, use "transaction" for bar rankings, "category" for pie, "month" for line. If the query says "grouped by X", groupBy MUST reflect X even if chartType is "bar"
 	- Generate descriptive chartTitle based on the query
 	- Return ONLY the JSON object, no explanation
 	- If unclear, use broader filters rather than none`;
@@ -441,7 +458,8 @@ export async function searchTransactionsWithAI(
 			fallbackReason: apiResponse.fallbackReason,
 			visualize: filters.visualize || false,
 			chartType: filters.chartType || 'bar',
-			chartTitle: filters.chartTitle || 'Transaction Analysis'
+			chartTitle: filters.chartTitle || 'Transaction Analysis',
+			groupBy: parseChartGroupBy(filters.groupBy)
 		};
 	} catch (error) {
 		console.error('AI search error:', error);

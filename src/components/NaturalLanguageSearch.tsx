@@ -245,6 +245,7 @@ const NaturalLanguageSearch: React.FC<NaturalLanguageSearchProps> = ({
           transactions={searchResult.transactions}
           chartType={searchResult.chartType || 'bar'}
           title={searchResult.chartTitle || 'Transaction Analysis'}
+          groupBy={searchResult.groupBy ?? null}
           onClose={() => setSearchResult(null)}
         />
       )}
