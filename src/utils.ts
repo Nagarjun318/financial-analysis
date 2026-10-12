@@ -130,6 +130,14 @@ export const formatCurrency = (amount: number) => {
  */
 export const getCategory = (description: string): string => {
   const desc = (description || '').toUpperCase();
+
+  // High-confidence loan mandates win outright (mirrors the static AI rules):
+  // a UPI/NEFT-wrapped description must stay a clean 'CAR LOAN' instead of
+  // degrading into a hyphen-joined 'CAR LOAN-UPI' / 'BANK TRANSFER-CAR LOAN'.
+  if (desc.includes('SUNDARAMFIN') || desc.includes('SUNDARAM FINANCE')) {
+    return 'CAR LOAN';
+  }
+
   const foundCategories = new Set<string>();
 
   for (const [key, value] of categorizationMap.entries()) {

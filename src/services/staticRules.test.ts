@@ -17,4 +17,12 @@ describe('Sundaram Finance car loan rules', () => {
     expect(getCategory('ACH D- SUNDARAMFINLTD 123456')).toBe('CAR LOAN');
     expect(getCategory('ACH D- SUNDARAM FINANCE LTD 123456')).toBe('CAR LOAN');
   });
+
+  it('keeps a clean CAR LOAN category for UPI/NEFT-wrapped descriptions', () => {
+    // Without priority handling these multi-match and join into
+    // 'CAR LOAN-UPI' / 'BANK TRANSFER-CAR LOAN'.
+    expect(getCategory('UPI-SUNDARAM FINANCE LTD-EMI PAYMENT')).toBe('CAR LOAN');
+    expect(getCategory('NEFT DR-SUNDARAM FINANCE-Car Loan EMI')).toBe('CAR LOAN');
+    expect(getCategory('ACH D- SUNDARAMFINLTD-12345678')).toBe('CAR LOAN');
+  });
 });
