@@ -20,6 +20,7 @@ export const categorizationMap = new Map<string, string>([
   ['524181XXXXXX6897', 'DEBIT CARD'],
   ['223487XXXXXX8021', 'DEBIT CARD'],
   ['SUNDARAMFIN', 'CAR LOAN'],
+  ['SUNDARAM FINANCE', 'CAR LOAN'],
   ['IMPS', 'BANK TRANSFER'],
   ['RTGS', 'BANK TRANSFER'],
   ['NEFT', 'BANK TRANSFER'],

@@ -639,7 +639,7 @@ export async function generateAIForecast(
  * Apply static rules for known transaction patterns
  * Returns the category if a rule matches, otherwise null
  */
-function applyStaticCategoryRules(description: string): string | null {
+export function applyStaticCategoryRules(description: string): string | null {
 	const normalizedDesc = description.toUpperCase();
 
 	// Loan auto-debit mandates
@@ -647,7 +647,10 @@ function applyStaticCategoryRules(description: string): string | null {
 		return 'Plot Loan';
 	}
 
-	if (normalizedDesc.includes('ACH D- SUNDARAMFINLTD')) {
+	// Car loan auto-debit mandates. Sundaram Finance appears in statements as
+	// both "SUNDARAMFINLTD" and "SUNDARAM FINANCE" — cover both spellings.
+	if (normalizedDesc.includes('ACH D- SUNDARAMFINLTD') ||
+		normalizedDesc.includes('SUNDARAM FINANCE')) {
 		return 'Car Loan';
 	}
 
