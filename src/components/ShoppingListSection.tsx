@@ -2,6 +2,9 @@ import React from 'react';
 const { useState, useMemo } = React;
 import { Trash2, Check, Edit2, X, Loader2 } from 'lucide-react';
 import { formatCurrency } from '../utils';
+import { showToast } from '../utils/toast';
+import { exportRowsToCsv, exportRowsToExcel, exportRowsToPdf, type ExportFormat } from '../utils/exportTable';
+import ExportMenu from './ExportMenu';
 import { EmptyState } from './ui';
 import type { GroceryItem, ShoppingListItem } from '../hooks/useGroceries.ts';
 
@@ -67,6 +70,44 @@ const ShoppingListSection: React.FC<ShoppingListSectionProps> = ({
       console.error('Error updating shopping item:', error);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleExport = async (format: ExportFormat) => {
+    if (shoppingList.length === 0) {
+      showToast('Nothing to download — shopping list is empty.', 'info');
+      return;
+    }
+    const headers = ['Item', 'Category', 'Qty', 'Unit', 'Package', 'Price Each (₹)', 'Total (₹)', 'Picked', 'Auto Added'];
+    const sorted = [...shoppingList].sort((a, b) => a.category.localeCompare(b.category) || a.item_name.localeCompare(b.item_name));
+    const rows = sorted.map((item) => {
+      const linked = items.find((i) => i.id === item.grocery_id);
+      const unitPrice = item.price || (linked ? linked.price : 0) || 0;
+      return [
+        item.item_name,
+        item.category,
+        item.quantity,
+        item.unit,
+        item.package_size || '',
+        Number(unitPrice).toFixed(2),
+        Number(unitPrice * item.quantity).toFixed(2),
+        item.is_picked ? 'Yes' : 'No',
+        item.is_auto_added ? 'Yes' : 'No',
+      ];
+    });
+    const total = sorted.reduce((s, item) => {
+      const linked = items.find((i) => i.id === item.grocery_id);
+      const unitPrice = item.price || (linked ? linked.price : 0) || 0;
+      return s + unitPrice * item.quantity;
+    }, 0);
+    try {
+      if (format === 'csv') exportRowsToCsv('shopping-list', headers, rows);
+      else if (format === 'excel') await exportRowsToExcel('shopping-list', 'Shopping List', headers, rows);
+      else exportRowsToPdf('Shopping List', `${sorted.length} item(s)`, headers, rows, `Estimated total: ₹${total.toFixed(2)}`);
+      showToast(`Shopping list downloaded as ${format.toUpperCase()}`, 'success');
+    } catch (error) {
+      console.error('Shopping list export failed:', error);
+      showToast(error instanceof Error ? error.message : 'Download failed.', 'error');
     }
   };
 
@@ -200,6 +241,15 @@ const ShoppingListSection: React.FC<ShoppingListSectionProps> = ({
       )}
 
       <div className="space-y-6 animate-slideUp">
+        {/* Toolbar: count + download */}
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            {shoppingList.length === 0
+              ? 'No items to buy'
+              : `${shoppingList.length} item(s) · ${shoppingList.filter((i) => i.is_picked).length} picked`}
+          </p>
+          <ExportMenu onExport={handleExport} disabled={shoppingList.length === 0} label={`Download (${shoppingList.length})`} compact />
+        </div>
         {/* Bulk Purchase Button */}
         {shoppingList.some((item: ShoppingListItem) => item.is_picked) && (
           <div className="sticky top-0 z-30 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md py-2 -mx-4 px-4 md:mx-0 md:px-0 md:bg-transparent md:backdrop-blur-none md:static mb-4 transition-all">

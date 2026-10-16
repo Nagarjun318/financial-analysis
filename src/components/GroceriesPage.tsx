@@ -6,6 +6,8 @@ import { formatCurrency } from '../utils';
 import { getLocationName } from '../services/weatherService.ts';
 import { showToast } from '../utils/toast';
 import { EmptyState, Skeleton } from './ui';
+import ExportMenu from './ExportMenu';
+import { exportRowsToCsv, exportRowsToExcel, exportRowsToPdf, type ExportFormat } from '../utils/exportTable';
 import { GroceryAdvisorChat } from './GroceryAdvisorChat';
 import WeatherSmartAssistant from './WeatherSmartAssistant';
 import ShoppingListSection from './ShoppingListSection.tsx';
@@ -406,6 +408,36 @@ const GroceriesPage: React.FC<{ userId?: string; onWeatherUpdate?: (condition: s
 
     const lowStockCount = items.filter((i: GroceryItem) => i.current_stock < i.min_stock).length;
 
+    const handleExportInventory = async (format: ExportFormat) => {
+        if (filteredItems.length === 0) {
+            showToast('Nothing to download — inventory is empty.', 'info');
+            return;
+        }
+        const headers = ['Item', 'Category', 'Stock', 'Min', 'Unit', 'Package', 'Price Each (₹)', 'Total Value (₹)', 'Last Purchased', 'Status'];
+        const rows = filteredItems.map((item: GroceryItem) => [
+            item.item_name,
+            item.category,
+            item.current_stock,
+            item.min_stock,
+            item.unit,
+            item.package_size || '',
+            Number(item.price || 0).toFixed(2),
+            Number((item.price || 0) * item.current_stock).toFixed(2),
+            item.last_purchased_date || '',
+            item.current_stock < item.min_stock ? 'Low Stock' : 'OK',
+        ]);
+        const totalValue = filteredItems.reduce((s: number, i: GroceryItem) => s + (i.price || 0) * i.current_stock, 0);
+        try {
+            if (format === 'csv') exportRowsToCsv('inventory', headers, rows);
+            else if (format === 'excel') await exportRowsToExcel('inventory', 'Inventory', headers, rows);
+            else exportRowsToPdf('Home Inventory', selectedCategory === 'All' ? 'All categories' : selectedCategory, headers, rows, `Total inventory value: ₹${totalValue.toFixed(2)}`);
+            showToast(`Inventory downloaded as ${format.toUpperCase()}`, 'success');
+        } catch (error) {
+            console.error('Inventory export failed:', error);
+            showToast(error instanceof Error ? error.message : 'Download failed.', 'error');
+        }
+    };
+
     // ... (keep existing state and logic)
 
     return (
@@ -673,6 +705,9 @@ const GroceriesPage: React.FC<{ userId?: string; onWeatherUpdate?: (condition: s
                                 ))}
                             </select>
                             <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+                        </div>
+                        <div className="flex md:justify-end">
+                            <ExportMenu onExport={handleExportInventory} disabled={filteredItems.length === 0} label={`Download (${filteredItems.length})`} />
                         </div>
                     </div>
 
@@ -963,6 +998,7 @@ const GroceriesPage: React.FC<{ userId?: string; onWeatherUpdate?: (condition: s
                     </div>
                 </div>
             )}
+            {activeTab === 'shopping' && (
             <ShoppingListSection
                 shoppingList={shoppingList}
                 items={items}
@@ -975,6 +1011,7 @@ const GroceriesPage: React.FC<{ userId?: string; onWeatherUpdate?: (condition: s
                 onUpdateItem={handleUpdateShoppingItem}
                 onDeleteItem={deleteShoppingItem}
             />
+            )}
             {/* AI Chef Tab */}
             {activeTab === 'ai-chef' && (
                 <div className="glass-panel rounded-2xl border border-gray-200 dark:border-gray-700/50 shadow-lg bg-white/50 dark:bg-gray-800/50 backdrop-blur-xl overflow-hidden flex flex-col h-[600px] animate-slideUp">
